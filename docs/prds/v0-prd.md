@@ -394,3 +394,13 @@ Better:
 Even shorter:
 
 > WhatsApp-style mobile UX for coding agents running on your VPS.
+
+## 19. Open Questions (Rust Core — `timu-core`)
+
+These need to be resolved before or during implementation of the Rust core layer. They shape the architecture, not just the implementation.
+
+1. **tmux output streaming strategy** — `tmux capture-pane` polling vs `tmux pipe-pane` (pipe to a file + tail) vs tmux control-mode (`tmux -C`). Control-mode is the "correct" way but complex; polling is simplest for V0. Needs a quick spike to decide.
+2. **SSH connection model** — one long-lived SSH connection per machine with multiple channels (cheaper, survives better) vs one connection per session. russh handles multichannel well; lean is one connection per machine, with tmux interactions as channels.
+3. **FFI mechanism to Expo** — UniFFI (generates Kotlin + Swift bindings, mature, used by Signal/FF) vs react-native-rust-style alternatives. And who owns the Expo native module wrapper that calls the generated bindings.
+4. **Chat-message extraction from terminal output** — agents don't emit structured messages over a plain PTY. V0 likely treats terminal output as one collapsible stream, with the user's input and the agent's latest reply-block as pseudo-messages. This is a product + Rust collaboration.
+5. **Where persistent state lives** — Rust-owned SQLite (rusqlite) for profiles/sessions/folders vs delegating to RN's AsyncStorage. Lean is Rust-owned so session/bookmark data stays consistent and survives RN reinstalls.

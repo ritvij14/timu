@@ -1,4 +1,4 @@
-# [PROJECT NAME]
+# timu
 
 > **Master context file. Single source of truth for this project. All docs/ files are modules that extend this. README.md is a public-facing summary derived from this.**
 
@@ -6,12 +6,12 @@
 
 ## 1. Project Identity
 
-**Name:** [Project Name]
-**Purpose:** [One sentence — what this does and why it exists]
-**Type:** [Backend API / Full-Stack Web App / Mobile App / CLI Tool / Library / Other]
-**Primary Users:** [Who uses this — specific, not just "users"]
-**Stage:** [Idea / MVP / Beta / Production / Scaling]
-**Repo:** [URL]
+**Name:** timu
+**Purpose:** An open-source mobile app for running persistent AI coding sessions on your own SSH-accessible machine via tmux.
+**Type:** Mobile App (Expo / React Native) + Rust core library (FFI)
+**Primary Users:** Engineers who know basic coding and SSH; AI/vibe coders who already use Codex, Claude Code, Cursor etc. and want to drive them from a phone.
+**Stage:** Idea → MVP (V0 in progress; see `docs/prds/v0-prd.md`)
+**Repo:** [URL TBD]
 
 ---
 
@@ -21,6 +21,13 @@
 
 > **Living rule:** No hard-block security rules have been established yet. The moment a security-critical constraint is identified (e.g. SSH credential handling, host key verification, secret storage), add it here immediately as a numbered rule with reasoning and a forbidden/required example. Do not wait until session end.
 
+1. **Never persist SSH secrets in `MachineProfile` or any SQLite table.** Passwords, private-key bytes, and key passphrases live only in platform secure storage (Keystore/Keychain) and are supplied to `russh` at connect time. The persisted profile must contain only the *method kind* (`AuthMethod`), never the material.
+   - ❌ Forbidden: adding a `password: String` or `private_key: String` field to `MachineProfile`/`AuthMethod` and serializing it.
+   - ✅ Required: keep `AuthMethod` as the kind enum; pass a separate `Credentials` carrier (held in memory / secure storage) into the connect call.
+2. **Never disable or auto-accept SSH host key verification.** First connection uses trust-on-first-use (TOFU) with the fingerprint surfaced to the user; subsequent connections must compare against the pinned fingerprint and fail on mismatch. No `accept-all` / insecure skip.
+   - ❌ Forbidden: `known_hosts` policy that always accepts.
+   - ✅ Required: pin the fingerprint on first connect; reject on mismatch thereafter.
+
 ---
 
 ## 3. Tech Stack
@@ -29,32 +36,34 @@
 
 COMPULSORY TASK - Always be clear on the major release of the tech stack being used, and also always link the documentation to that version in this section. For example, if we are using Tailwind V3, then it should clearly be mentioned as "Tailwind V3" and the documentation link should be to the V3 documentation.
 
-**Language:** [e.g. TypeScript, Python, Dart, Go, etc.]
-**Runtime / Platform:** [e.g. Node.js 20, Python 3.11, Flutter 3.x, Browser]
-**Framework:** [e.g. Hono, FastAPI, Flutter, Next.js, Express, anything else — or None]
-**Package Manager:** [e.g. npm, pnpm, pip, pub, etc.]
+**Language:** Rust (timu-core), TypeScript (timu-app)
+**Runtime / Platform:** Rust edition 2024 / stable ≥ 1.96; Expo / React Native (mobile + web)
+**Framework:** None on the Rust side (library crate); Expo Router on the app side
+**Package Manager:** cargo (Rust), npm (app — `package-lock.json` present)
 
 **Data:**
 
-- Primary store: [e.g. Firestore, PostgreSQL, SQLite, None]
-- Search: [e.g. Elasticsearch, Algolia, None]
-- Cache: [e.g. Redis, in-memory, None]
-- File storage: [e.g. GCS, S3, local, None]
+- Primary store: SQLite via `rusqlite` (planned; owned by timu-core for profiles/sessions/folders)
+- Search: None
+- Cache: None
+- File storage: Device-local only (V0); no cloud sync
 
 **Infrastructure:**
 
-- Hosting: [e.g. Cloud Run, Railway, Vercel, App Store / Play Store, None yet]
-- Cloud provider: [e.g. GCP, AWS, None]
-- CI/CD: [e.g. GitHub Actions, None]
+- Hosting: App Store / Play Store (V0 target); self-hostable, no hosted backend
+- Cloud provider: None (V0 is local-first, no backend)
+- CI/CD: None yet
 
-**Auth:** [e.g. Firebase Auth, JWT, OAuth, Clerk, None]
-**Queue / Jobs:** [e.g. Cloud Tasks, BullMQ, Celery, None]
-**Testing:** [e.g. Vitest, Jest, pytest, Flutter test, None]
+**Auth:** SSH (user's own machine) — password, private-key paste, private-key file, optional passphrase. No app-level accounts in V0.
+**Queue / Jobs:** None
+**Testing:** `cargo test` (Rust unit + integration). Three-layer philosophy in `docs/infra/testing.md`.
 
 **Key External Integrations:**
 
-- [Service]: [what it does in this system]
-- [Service]: [what it does in this system]
+- SSH (russh, planned): transport to the user's machine
+- tmux: persistent session backend on the user's machine
+- SFTP (russh-sftp, planned): folder picker
+- Coding agent CLIs on the host: `codex`, `claude`, `opencode`
 
 ---
 
@@ -62,29 +71,40 @@ COMPULSORY TASK - Always be clear on the major release of the tech stack being u
 
 > How this system is structured at a high level. For deep dives, see docs/features/ and docs/infra/.
 
-**Pattern:** [e.g. Monolith with modular structure / Monorepo / MVC / Feature-based / Layered]
+**Pattern:** Monorepo. Two first-class packages: `timu-core` (Rust library, the secure transport + session engine) and `timu-app` (Expo UI that drives the core over FFI).
 
 **Core modules and what each owns:**
 
-- `[module]` — [what it is responsible for]
-- `[module]` — [what it is responsible for]
-- `[module]` — [what it is responsible for]
-- `shared/` — [shared utilities, types, middleware, constants]
+- `timu-core/src/error.rs` — typed `TimuError` mapping PRD §6 SSH failure states; stable `code()` FFI contract
+- `timu-core/src/profile.rs` — `MachineProfile` + `AuthMethod` domain types (no secrets)
+- `timu-core/src/credentials.rs` — `Credentials` carrier (connect-time secrets; redacting Debug, never serialized)
+- `timu-core/src/host_key.rs` — `Fingerprint` + `HostKeyPins` TOFU pinning
+- `timu-core/src/readiness.rs` — `Tool`, `ToolStatus`, `ReadinessReport` (PRD §7/§8)
+- `timu-core/src/readiness_probe.rs` — pure probe-command builder + output parser
+- `timu-core/src/ssh.rs` — `SshTransport` trait + `CommandOutput` + `FakeSshTransport`
+- `timu-core/src/ssh_russh.rs` — real `russh` transport: connect, auth, TOFU, exec (live test `#[ignore]`)
+- `timu-core/src/connection.rs` — `ConnectionTestResult` + `test_connection` (PRD §6)
+- `timu-core/src/folder.rs` — `FolderEntry` + shell-based folder listing with `shell_quote`
+- `timu-core/src/store.rs` — SQLite store: profiles, sessions, recent/favorites, host-key pins (no secrets)
+- `timu-core/src/timu_core.rs` — `TimuCore` facade (holds TOFU pins; `test_connection`)
+- `timu-app/` — Expo/React Native UI (chat-first, drives timu-core)
+- `docs/` — PRD, feature docs, infra docs
 
 **Data flow (happy path):**
-[Describe how a typical request/action flows through the system in 3-5 steps]
-
-1. [Step 1]
-2. [Step 2]
-3. [Step 3]
+1. User fills a `MachineProfile` in the app and taps "Test connection".
+2. timu-core opens SSH (russh), verifies host key (TOFU), authenticates.
+3. On success, timu-core runs the readiness probe over one SSH channel and parses it into a `ReadinessReport`.
+4. User picks a folder (SFTP) and an agent; timu-core creates/reuses a tmux session in that folder and launches the agent.
+5. tmux pane output streams back into the chat UI; the session persists on the server across app close/network loss.
 
 **Key architectural decisions:**
 
 > For full reasoning on each decision, see `docs/infra/decisions.md`
 
-- [Decision]: [one-line rationale]
-- [Decision]: [one-line rationale]
-- [Decision]: [one-line rationale]
+- Rust core behind FFI (UniFFI planned): mobile-friendly SSH/tmux/SFTP that RN can't do natively
+- `MachineProfile` holds no secrets: credentials live in platform secure storage, never persisted in the profile
+- `SshTransport` trait + generics (not `dyn`): native async-fn-in-traits, no `async-trait` dep, testable with `FakeSshTransport`
+- TDD-first: every module lands red → green → refactor; 42 tests currently
 
 ---
 
@@ -94,10 +114,10 @@ COMPULSORY TASK - Always be clear on the major release of the tech stack being u
 
 ### Naming
 
-- [e.g. Files: kebab-case. Classes: PascalCase. Functions: camelCase]
-- [e.g. Database collections/tables: snake_case]
-- [e.g. Environment variables: SCREAMING_SNAKE_CASE]
-- [Add project-specific naming rules]
+- Rust files: `snake_case.rs`. Types/structs/enums: `PascalCase`. Functions/variables: `snake_case`. Constants: `SCREAMING_SNAKE_CASE`.
+- TypeScript/React (timu-app): files `kebab-case.tsx`, components `PascalCase`.
+- SQLite tables: `snake_case`.
+- Environment variables: `SCREAMING_SNAKE_CASE`.
 
 ### Code Style
 
@@ -107,9 +127,9 @@ COMPULSORY TASK - Always be clear on the major release of the tech stack being u
 
 ### Code Structure
 
-- [e.g. One module per feature. Routes → Service → Repository. No business logic in routes.]
-- [e.g. All async functions must handle errors explicitly — no unhandled promise rejections]
-- [e.g. No direct database calls outside repository layer]
+- timu-core: one module per concern (`error.rs`, `profile.rs`, `readiness.rs`, …) re-exported through `lib.rs`. No module imports another's internals — only the public re-exports.
+- TDD: every new behavior lands as a failing test first, then the minimal implementation, then refactor. No untested production code.
+- New external crates are added only when a test forces them — not upfront. Document the addition in `docs/infra/decisions.md`.
 - **Living rule:** When a new project-wide structure pattern is established, add it here immediately — do not wait until session end.
 
 ### useEffect Policy
@@ -142,9 +162,12 @@ Before writing a `useEffect`, check which category it falls into:
 
 > Files listed here are load-bearing. Do not refactor, rename, or change their interfaces without explicit user confirmation.
 
-- [e.g. src/auth/middleware.ts — authentication gate for all routes]
-- [e.g. src/billing/stripe-webhook.ts — handles payment events]
-- [e.g. migrations/ — database schema changes are irreversible in production]
+- `timu-core/src/error.rs` — `TimuError::code()` is the FFI contract; renaming codes is a breaking change
+- `timu-core/src/ssh.rs` — `SshTransport` trait; every SSH-dependent flow and test depends on this seam
+- `timu-core/src/ssh_russh.rs` — concrete SSH transport; host-key TOFU lives here (Hard Block §2.2)
+- `timu-core/src/profile.rs` — security boundary: must not carry secrets (Hard Block §2.1)
+- `timu-core/src/store.rs` — schema is the persistence contract; no-secret-columns is enforced by test (ADR-009)
+- `docs/prds/v0-prd.md` — the V0 scope of record; changes here redirect all work
 - **Living rule:** When a file or path is identified as load-bearing, add it here immediately with a one-line description of why it's critical.
 
 ### File Navigation
@@ -155,29 +178,31 @@ Before writing a `useEffect`, check which category it falls into:
 
 ### Error Handling
 
-- [e.g. All errors return { error: string, code: string } — never raw exceptions to client]
-- [e.g. Log errors with context before returning to client]
+- All timu-core failures surface as `TimuError` (typed enum). The UI branches on `code()` (stable string) and may render `Display` output directly.
+- Add a new variant only when the user can take a *different* corrective action; otherwise fold into `TimuError::Other`.
+- Never leak raw secrets/paths into error messages shown to the user.
 - **Living rule:** When a project-wide error handling pattern is established, add it here immediately.
 
 ### Testing
 
 - Full testing philosophy, taxonomy, and workflow: see `docs/infra/testing.md` — read it before writing any tests.
-- Three layers required: unit (pure logic), integration (routes → service → database), flow (multi-step user journeys).
-- Every endpoint needs: happy path, input validation, and authorization tests at minimum.
-- Mock only at the external boundary (email, payment, third-party APIs). Never mock your own database in integration tests.
-- Test names read as user-facing descriptions: `"returns 403 when agent accesses another agent's contact"`.
+- Three layers required: unit (pure logic), integration (full stack), flow (multi-step user journeys). For timu-core, "integration" means a flow run through the real trait impl (or `FakeSshTransport`) end-to-end; "flow" means a multi-step user journey (connect → readiness → start session).
+- timu-core runner: `cargo test` (from `timu-core/`). Tests live inline (`#[cfg(test)] mod tests`) next to the code they test, plus `tests/` for cross-crate integration.
+- TDD is mandatory in timu-core: failing test first, then minimal impl, then refactor.
+- Mock only at the external boundary (SSH server, SFTP server). The `SshTransport` trait + `FakeSshTransport` is the boundary mock — never mock your own domain types or store.
+- Test names read as user-facing descriptions: `"tmux_is_missing_true_only_when_tmux_missing"`, not `"test_tmux"`.
 - Before opening a PR, invoke the `pre-merge-qa-tester` agent and reconcile its checklist against the test suite.
 - **Living rule:** When a project-specific test convention, runner command, or framework rule is established, add it here immediately.
 
 ### Git
 
-- [e.g. Branch naming: feature/*, fix/*, chore/*]
-- [e.g. Commit format: conventional commits — feat:, fix:, chore:, docs:]
-- [e.g. Never commit directly to main]
+- Branch naming: `feature/*`, `fix/*`, `chore/*` (branches are optional — see below)
+- Commit format: conventional commits — `feat:`, `fix:`, `chore:`, `docs:` (gitmoji also used in this repo)
+- Direct commits to `main` are allowed in this repo (solo project); feature branches are used when parallel work needs isolation
 
 ### Other
 
-- [Any other conventions critical to this project]
+- No analytics, no telemetry in V0 (PRD §14/§15). A telemetry layer may be stubbed but must do nothing.
 
 ---
 
@@ -216,24 +241,26 @@ Before writing a `useEffect`, check which category it falls into:
 > How to get this running from scratch.
 
 ```bash
-# 1. Install dependencies
-[install command]
+# 1. Rust core — build + test
+cd timu-core
+cargo test
 
-# 2. Copy environment file and fill in values
-cp .env.example .env
+# 2. Expo app — install (first time or after dependency changes)
+cd ../timu-app
+npm install
 
-# 3. [Any database setup, migrations, seeds]
-[command]
-
-# 4. Start development server
-[dev command]
+# 3. Start the Expo dev server
+npm run dev
 ```
+
+No `.env` is required for V0 (local-first, no backend). When SSH connection
+tests need a target, point the app at your own VPS / `localhost` sshd.
 
 **Key scripts:**
 
-- `[command]` — [what it does]
-- `[command]` — [what it does]
-- `[command]` — [what it does]
+- `cargo test` (in `timu-core/`) — runs the Rust unit + integration suite (TDD)
+- `cargo build` (in `timu-core/`) — builds the library that FFI will expose
+- `npm run dev` (in `timu-app/`) — Expo dev server (web/iOS/Android)
 
 ---
 
@@ -246,8 +273,7 @@ cp .env.example .env
 
 | Feature        | Doc                                                            | Status                    |
 | -------------- | -------------------------------------------------------------- | ------------------------- |
-| [Feature name] | [docs/features/feature-name.md](docs/features/feature-name.md) | [Stable / WIP / Outdated] |
-| [Feature name] | [docs/features/feature-name.md](docs/features/feature-name.md) | [Stable / WIP / Outdated] |
+| timu-core (Rust engine) | [docs/features/timu-core.md](docs/features/timu-core.md) | WIP — error/profile/credentials/host-key/readiness/ssh+russh/connection/folder/store landed (tasks 1–10); tmux engine + secrets bridge + FFI pending |
 
 > **Living section:** Add a row the moment a new feature doc is created. Update the Status column as features evolve. Never leave a feature undocumented.
 
