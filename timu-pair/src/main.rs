@@ -16,6 +16,7 @@ use timu_pair::{
     CleanupGuard, CliOptions, CommandOutput, PairingPayload, System, append_authorized_key_line,
     build_temporary_authorized_key, choose_address, discover_addresses, ensure_ssh_available,
     is_expired, reject_unsafe_authorized_keys_path, replace_temporary_authorized_key_in_file,
+    wait_for_completion,
 };
 
 struct RealSystem;
@@ -46,7 +47,7 @@ fn run() -> Result<(), String> {
         .or_else(|| env::var("USER").ok())
         .filter(|value| !value.is_empty())
         .ok_or("could not determine SSH username; use --user")?;
-    prepare_pairing(host, username, options.port)
+    prepare_pairing(&system, host, username, options.port)
 }
 
 fn complete_pairing(args: &[String]) -> Result<(), String> {
@@ -72,8 +73,13 @@ fn complete_pairing(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-fn prepare_pairing(host: String, username: String, port: u16) -> Result<(), String> {
-    let now = unix_now()?;
+fn prepare_pairing(
+    system: &dyn System,
+    host: String,
+    username: String,
+    port: u16,
+) -> Result<(), String> {
+    let now = system.now();
     let expires_at = now + 300;
     let pairing_id = format!("{now}-{}", std::process::id());
     let root = env::temp_dir().join(format!("timu-pair-{pairing_id}"));
@@ -154,20 +160,10 @@ fn prepare_pairing(host: String, username: String, port: u16) -> Result<(), Stri
     let signal = Arc::clone(&cancelled);
     ctrlc::set_handler(move || signal.store(true, Ordering::SeqCst))
         .map_err(|_| "could not install signal handler")?;
-    while unix_now()? <= expires_at && !cancelled.load(Ordering::SeqCst) {
-        if done.exists() {
-            println!("Paired successfully. You can return to the timu app.");
-            drop(cleanup);
-            return Ok(());
-        }
-        thread::sleep(Duration::from_millis(250));
-    }
+    wait_for_completion(system, &done, expires_at, &cancelled)?;
+    println!("Paired successfully. You can return to the timu app.");
     drop(cleanup);
-    if cancelled.load(Ordering::SeqCst) {
-        Err("pairing cancelled; temporary access removed".into())
-    } else {
-        Err("pairing expired; temporary access removed".into())
-    }
+    Ok(())
 }
 
 impl System for RealSystem {
@@ -217,6 +213,10 @@ impl System for RealSystem {
         let socket = UdpSocket::bind("0.0.0.0:0").ok()?;
         socket.connect("8.8.8.8:80").ok()?;
         Some(socket.local_addr().ok()?.ip().to_string())
+    }
+
+    fn sleep(&self, duration: Duration) {
+        thread::sleep(duration);
     }
 }
 

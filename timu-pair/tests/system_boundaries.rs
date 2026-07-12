@@ -82,6 +82,8 @@ impl System for FakeSystem {
     fn route_address(&self) -> Option<String> {
         None
     }
+
+    fn sleep(&self, _duration: Duration) {}
 }
 
 #[test]

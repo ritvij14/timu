@@ -7,7 +7,7 @@ use std::fs::OpenOptions;
 use std::io::Write;
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Duration;
 
 const QR_PREFIX: &str = "timu://pair?data=";
@@ -211,6 +211,7 @@ pub trait System {
     fn now(&self) -> u64;
     fn tcp_reachable(&self, host: &str, port: u16, timeout: Duration) -> bool;
     fn route_address(&self) -> Option<String>;
+    fn sleep(&self, duration: Duration);
 }
 
 /// Verifies that an SSH listener is reachable on `127.0.0.1:port`.
@@ -237,6 +238,30 @@ pub fn ensure_ssh_available(system: &dyn System, port: u16) -> Result<(), String
         return Err("failed to enable Remote Login".into());
     }
     Ok(())
+}
+
+/// Waits for the pairing completion marker `done` to appear, the credential to
+/// expire, or an injected cancellation signal to fire.
+///
+/// This is the injectable boundary behind the CLI's wait loop so tests can
+/// drive timeout and interrupt cleanup without real sleeps or signals.
+pub fn wait_for_completion(
+    system: &dyn System,
+    done: &Path,
+    expires_at: u64,
+    cancelled: &AtomicBool,
+) -> Result<(), String> {
+    while system.now() <= expires_at && !cancelled.load(Ordering::SeqCst) {
+        if done.exists() {
+            return Ok(());
+        }
+        system.sleep(Duration::from_millis(250));
+    }
+    if cancelled.load(Ordering::SeqCst) {
+        Err("pairing cancelled; temporary access removed".into())
+    } else {
+        Err("pairing expired; temporary access removed".into())
+    }
 }
 
 /// Chooses the address the phone should use to reach this machine.
@@ -266,10 +291,10 @@ where
         .trim()
         .parse::<usize>()
         .map_err(|_| "enter a valid option number".to_string())?;
-    candidates
-        .get(index.saturating_sub(1))
-        .map(|item| item.address.clone())
-        .ok_or_else(|| "option number is out of range".into())
+    if index == 0 || index > candidates.len() {
+        return Err("option number is out of range".into());
+    }
+    Ok(candidates[index - 1].address.clone())
 }
 
 /// Discovers Wi-Fi, Ethernet, and Tailscale address candidates using the
@@ -283,13 +308,19 @@ pub fn discover_addresses(system: &dyn System) -> Result<Vec<AddressCandidate>, 
             .map(|address| vec![AddressCandidate::new("eth0", &address)])
             .unwrap_or_default()
     };
-    if let Ok(output) = system.command("tailscale", &["ip", "-4"]) {
-        if output.status == 0 {
-            for line in output.stdout.lines() {
-                let trimmed = line.trim();
-                if !trimmed.is_empty() {
-                    found.push(AddressCandidate::new("tailscale0", trimmed));
-                }
+    if let Ok(output) = system.command("tailscale", &["ip", "-4"])
+        && output.status == 0
+    {
+        for line in output.stdout.lines() {
+            let trimmed = line.trim();
+            if !trimmed.is_empty()
+                && let Some(kind) = classify_address("tailscale0", trimmed)
+            {
+                found.push(AddressCandidate {
+                    interface: "tailscale0".into(),
+                    address: trimmed.into(),
+                    kind,
+                });
             }
         }
     }
@@ -320,16 +351,19 @@ fn discover_macos_lan_addresses(system: &dyn System) -> Vec<AddressCandidate> {
             } else {
                 None
             };
-        } else if let Some(device) = line.strip_prefix("Device: ") {
-            if let Some(_kind) = kind {
-                if let Ok(address) = system.command("ipconfig", &["getifaddr", device]) {
-                    if address.status == 0 {
-                        let value = address.stdout.trim().to_string();
-                        if !value.is_empty() {
-                            found.push(AddressCandidate::new(device, &value));
-                        }
-                    }
-                }
+        } else if let (Some(_kind), Some(device)) = (kind, line.strip_prefix("Device: "))
+            && let Ok(address) = system.command("ipconfig", &["getifaddr", device])
+            && address.status == 0
+        {
+            let value = address.stdout.trim().to_string();
+            if !value.is_empty()
+                && let Some(kind) = classify_address(device, &value)
+            {
+                found.push(AddressCandidate {
+                    interface: device.into(),
+                    address: value,
+                    kind,
+                });
             }
         }
     }
@@ -537,7 +571,12 @@ where
 }
 
 fn classify_address(interface: &str, address: &str) -> Option<AddressKind> {
-    if address.starts_with("127.")
+    let octets: Vec<u8> = address
+        .split('.')
+        .filter_map(|part| part.parse::<u8>().ok())
+        .collect();
+    if octets.len() != 4
+        || octets[0] == 127
         || interface.starts_with("lo")
         || interface.starts_with("docker")
         || interface.starts_with("bridge")
@@ -545,7 +584,7 @@ fn classify_address(interface: &str, address: &str) -> Option<AddressKind> {
     {
         return None;
     }
-    if interface.to_ascii_lowercase().contains("tailscale") || is_tailscale_ipv4(address) {
+    if interface.to_ascii_lowercase().contains("tailscale") || is_tailscale_ipv4(&octets) {
         return Some(AddressKind::Tailscale);
     }
     if interface == "en0" || interface.starts_with("wl") {
@@ -557,10 +596,6 @@ fn classify_address(interface: &str, address: &str) -> Option<AddressKind> {
     None
 }
 
-fn is_tailscale_ipv4(address: &str) -> bool {
-    let octets: Vec<u8> = address
-        .split('.')
-        .filter_map(|part| part.parse::<u8>().ok())
-        .collect();
+fn is_tailscale_ipv4(octets: &[u8]) -> bool {
     octets.len() == 4 && octets[0] == 100 && (64..=127).contains(&octets[1])
 }
