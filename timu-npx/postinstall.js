@@ -22,7 +22,7 @@ const path = require("path");
 const crypto = require("crypto");
 
 const REPO = "ritvij14/timu";
-const VERSION = "0.1.0"; // kept in sync with package.json + Cargo.toml + release.yml
+const VERSION = "0.1.1"; // kept in sync with package.json + Cargo.toml + release.yml
 
 // Map platform + arch to the release asset name.
 function platformAsset() {

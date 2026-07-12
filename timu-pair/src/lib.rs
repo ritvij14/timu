@@ -16,4 +16,4 @@ pub use authorized_keys::{
 pub use cli::CliOptions;
 pub use error::PayloadError;
 pub use payload::{PairingPayload, is_expired, pairing_id_from_random_bytes};
-pub use system::{CommandOutput, System, ensure_ssh_available, wait_for_completion};
+pub use system::{CommandOutput, System, ensure_ssh_available, host_key_fingerprint, wait_for_completion};

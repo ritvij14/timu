@@ -55,7 +55,9 @@ pub fn remove_tagged_authorization(path: &Path, pairing_id: &str) -> Result<(), 
 }
 
 pub fn append_authorized_key_line(path: &Path, line: &str) -> Result<(), PayloadError> {
-    validate_single_line(line)?;
+    if line.is_empty() || line.contains(['\n', '\r']) {
+        return Err(PayloadError::Invalid);
+    }
     mutate_authorized_keys(path, |current| {
         if let Some(marker) = pairing_marker(line)
             && current.contains(marker)

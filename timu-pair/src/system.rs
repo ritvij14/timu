@@ -18,6 +18,34 @@ pub trait System {
     fn tcp_reachable(&self, host: &str, port: u16, timeout: Duration) -> bool;
     fn route_address(&self) -> Option<String>;
     fn sleep(&self, duration: Duration);
+    fn file_exists(&self, path: &str) -> bool;
+}
+
+/// Reads the SHA-256 fingerprint of the first available SSH host key.
+///
+/// Tries ed25519, ecdsa, then rsa — the host may not have all key types
+/// generated, especially right after Remote Login is enabled on macOS.
+pub fn host_key_fingerprint(system: &dyn System) -> Result<String, String> {
+    for key_file in [
+        "/etc/ssh/ssh_host_ed25519_key.pub",
+        "/etc/ssh/ssh_host_ecdsa_key.pub",
+        "/etc/ssh/ssh_host_rsa_key.pub",
+    ] {
+        if !system.file_exists(key_file) {
+            continue;
+        }
+        let output = system
+            .command("ssh-keygen", &["-lf", key_file, "-E", "sha256"])?;
+        if output.status == 0 {
+            return output
+                .stdout
+                .split_whitespace()
+                .nth(1)
+                .map(str::to_string)
+                .ok_or_else(|| "invalid SSH host-key fingerprint".into());
+        }
+    }
+    Err("could not read the SSH host-key fingerprint".into())
 }
 
 /// Verifies that an SSH listener is reachable on `127.0.0.1:port`.

@@ -81,6 +81,10 @@ impl System for FakeSystem {
     }
 
     fn sleep(&self, _duration: Duration) {}
+
+    fn file_exists(&self, _path: &str) -> bool {
+        false
+    }
 }
 
 #[test]

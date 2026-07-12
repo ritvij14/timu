@@ -15,8 +15,9 @@ use qrcode::render::unicode;
 use timu_pair::{
     CleanupGuard, CliOptions, CommandOutput, PairingPayload, System, append_authorized_key_line,
     build_temporary_authorized_key, choose_address, discover_addresses, ensure_ssh_available,
-    is_expired, pairing_id_from_random_bytes, reject_unsafe_authorized_keys_path,
-    replace_temporary_authorized_key_in_file, wait_for_completion,
+    host_key_fingerprint, is_expired, pairing_id_from_random_bytes,
+    reject_unsafe_authorized_keys_path, replace_temporary_authorized_key_in_file,
+    wait_for_completion,
 };
 
 struct RealSystem;
@@ -107,7 +108,7 @@ fn prepare_pairing(
     )?;
     let public_key = fs::read_to_string(private_key.with_extension("pub"))
         .map_err(|_| "could not read the pairing public key")?;
-    let fingerprint = host_fingerprint()?;
+    let fingerprint = host_key_fingerprint(system)?;
     let machine_name = machine_hostname()?;
     let authorized_keys = authorized_keys_path()?;
     ensure_authorized_keys(&authorized_keys)?;
@@ -226,6 +227,10 @@ impl System for RealSystem {
     fn sleep(&self, duration: Duration) {
         thread::sleep(duration);
     }
+
+    fn file_exists(&self, path: &str) -> bool {
+        Path::new(path).exists()
+    }
 }
 
 fn authorized_keys_path() -> Result<PathBuf, String> {
@@ -257,20 +262,6 @@ fn machine_hostname() -> Result<String, String> {
     } else {
         Err("could not determine machine hostname".into())
     }
-}
-fn host_fingerprint() -> Result<String, String> {
-    let output = Command::new("ssh-keygen")
-        .args(["-lf", "/etc/ssh/ssh_host_ed25519_key.pub", "-E", "sha256"])
-        .output()
-        .map_err(|e| e.to_string())?;
-    if !output.status.success() {
-        return Err("could not read the SSH host-key fingerprint".into());
-    }
-    String::from_utf8_lossy(&output.stdout)
-        .split_whitespace()
-        .nth(1)
-        .map(str::to_string)
-        .ok_or_else(|| "invalid SSH host-key fingerprint".into())
 }
 fn unix_now() -> Result<u64, String> {
     Ok(SystemTime::now()

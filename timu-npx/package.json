@@ -1,6 +1,6 @@
 {
   "name": "timu-app",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Pair your machine with the timu mobile app — scan a QR code to connect via SSH.",
   "bin": {
     "timu": "bin/timu.js"

@@ -34,6 +34,60 @@ fn temporary_authorization_shell_quotes_the_forced_command() {
 }
 
 #[test]
+fn temporary_authorization_with_command_quotes_can_be_appended_to_authorized_keys() {
+    let root = std::env::temp_dir().join(format!(
+        "timu-pair-test-quote-{}",
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&root).unwrap();
+    let authorized_keys = root.join("authorized_keys");
+    std::fs::write(&authorized_keys, "ssh-ed25519 AAAAEXISTING laptop\n").unwrap();
+
+    let line = build_temporary_authorized_key(
+        "pair-123",
+        "/tmp/timu-pair-helper",
+        VALID_ED25519_PUBLIC_KEY,
+    )
+    .expect("valid temporary key");
+
+    assert!(line.contains("command=\""));
+
+    timu_pair::append_authorized_key_line(&authorized_keys, &line)
+        .expect("line with command quotes should be appendable");
+
+    let contents = std::fs::read_to_string(&authorized_keys).unwrap();
+    assert!(contents.contains("ssh-ed25519 AAAAEXISTING laptop"));
+    assert!(contents.contains("timu-pair:pair-123"));
+    assert!(contents.contains("command=\""));
+
+    std::fs::remove_dir_all(&root).unwrap();
+}
+
+#[test]
+fn append_rejects_multiline_input() {
+    let root = std::env::temp_dir().join(format!(
+        "timu-pair-test-multiline-{}",
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&root).unwrap();
+    let authorized_keys = root.join("authorized_keys");
+    std::fs::write(&authorized_keys, "ssh-ed25519 AAAAEXISTING laptop\n").unwrap();
+
+    let error = timu_pair::append_authorized_key_line(
+        &authorized_keys,
+        "ssh-ed25519 AAAAKEY timu-pair:pair-x\nssh-ed25519 AAAAINJECTED attacker",
+    )
+    .expect_err("multiline input should be rejected");
+
+    assert_eq!(error.to_string(), "invalid pairing payload");
+
+    let contents = std::fs::read_to_string(&authorized_keys).unwrap();
+    assert!(!contents.contains("INJECTED"));
+
+    std::fs::remove_dir_all(&root).unwrap();
+}
+
+#[test]
 fn permanent_key_handoff_replaces_only_the_matching_temporary_entry() {
     let existing = concat!(
         "ssh-ed25519 AAAAEXISTING laptop\n",
