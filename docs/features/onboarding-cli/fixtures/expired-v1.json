@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "pairing_id": "pair-expired-001",
+  "machine_name": "expired-example",
+  "host": "198.51.100.20",
+  "port": 22,
+  "username": "developer",
+  "host_key_fingerprint": "SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+  "expires_at_unix": 1700000300,
+  "ephemeral_private_key": "SYNTHETIC_EXPIRED_FIXTURE_NOT_A_REAL_KEY"
+}

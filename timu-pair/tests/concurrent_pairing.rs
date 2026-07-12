@@ -1,0 +1,114 @@
+use std::fs;
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Barrier};
+use std::thread;
+use std::time::{SystemTime, UNIX_EPOCH};
+use timu_pair::replace_temporary_authorized_key_in_file;
+
+static ROOT_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+fn isolated_root() -> PathBuf {
+    let unique = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("clock after epoch")
+        .as_nanos();
+    let sequence = ROOT_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    let root = std::env::temp_dir().join(format!(
+        "timu-pair-concurrent-{unique}-{sequence}-{}",
+        std::process::id()
+    ));
+    fs::create_dir(&root).expect("isolated root");
+    root
+}
+
+#[test]
+fn concurrent_handoffs_preserve_unrelated_and_each_other_authorizations() {
+    for _ in 0..30 {
+        let root = isolated_root();
+        let authorized_keys = root.join("authorized_keys");
+        fs::write(
+            &authorized_keys,
+            concat!(
+                "ssh-ed25519 AAAAUNRELATED laptop\n",
+                "restrict ssh-ed25519 AAAATEMP_A timu-pair:pair-a\n",
+                "restrict ssh-ed25519 AAAATEMP_B timu-pair:pair-b\n",
+            ),
+        )
+        .expect("authorization fixture");
+        let barrier = Arc::new(Barrier::new(3));
+        let first_path = authorized_keys.clone();
+        let first_barrier = Arc::clone(&barrier);
+        let first = thread::spawn(move || {
+            first_barrier.wait();
+            replace_temporary_authorized_key_in_file(
+                &first_path,
+                "pair-a",
+                "ssh-ed25519 AAAAPERMANENT_A timu-device:a",
+            )
+        });
+        let second_path = authorized_keys.clone();
+        let second_barrier = Arc::clone(&barrier);
+        let second = thread::spawn(move || {
+            second_barrier.wait();
+            replace_temporary_authorized_key_in_file(
+                &second_path,
+                "pair-b",
+                "ssh-ed25519 AAAAPERMANENT_B timu-device:b",
+            )
+        });
+        barrier.wait();
+        first.join().expect("first thread").expect("first handoff");
+        second
+            .join()
+            .expect("second thread")
+            .expect("second handoff");
+
+        let contents = fs::read_to_string(&authorized_keys).expect("authorization after handoffs");
+        assert!(contents.contains("AAAAUNRELATED"));
+        assert!(contents.contains("AAAAPERMANENT_A"));
+        assert!(contents.contains("AAAAPERMANENT_B"));
+        assert!(!contents.contains("timu-pair:pair-a"));
+        assert!(!contents.contains("timu-pair:pair-b"));
+        fs::remove_dir_all(root).expect("remove isolated root");
+    }
+}
+
+#[test]
+fn concurrent_temporary_authorizations_preserve_each_ceremony() {
+    let root = isolated_root();
+    let authorized_keys = root.join("authorized_keys");
+    fs::write(&authorized_keys, "ssh-ed25519 AAAAUNRELATED laptop\n")
+        .expect("authorization fixture");
+    let barrier = Arc::new(Barrier::new(3));
+    let first_path = authorized_keys.clone();
+    let first_barrier = Arc::clone(&barrier);
+    let first = thread::spawn(move || {
+        first_barrier.wait();
+        timu_pair::append_authorized_key_line(
+            &first_path,
+            "restrict ssh-ed25519 AAAATEMP_A timu-pair:pair-a",
+        )
+    });
+    let second_path = authorized_keys.clone();
+    let second_barrier = Arc::clone(&barrier);
+    let second = thread::spawn(move || {
+        second_barrier.wait();
+        timu_pair::append_authorized_key_line(
+            &second_path,
+            "restrict ssh-ed25519 AAAATEMP_B timu-pair:pair-b",
+        )
+    });
+    barrier.wait();
+    first.join().expect("first thread").expect("first append");
+    second
+        .join()
+        .expect("second thread")
+        .expect("second append");
+
+    let contents = fs::read_to_string(&authorized_keys).expect("authorization after appends");
+    assert!(contents.contains("AAAAUNRELATED"));
+    assert!(contents.contains("AAAATEMP_A"));
+    assert!(contents.contains("AAAATEMP_B"));
+    fs::remove_dir_all(root).expect("remove isolated root");
+}
