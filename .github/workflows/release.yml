@@ -56,13 +56,25 @@ jobs:
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
         run: cargo build --release --target ${{ matrix.target }}
 
+      - name: Test timu-pair
+        if: ${{ !matrix.cross }}
+        working-directory: timu-pair
+        run: cargo test && cargo clippy --all-targets -- -D warnings
+
       - name: Rename binary
         run: |
           cp timu-pair/target/${{ matrix.target }}/release/timu-pair \
              timu-pair/target/${{ matrix.target }}/release/${{ matrix.asset }}
 
+      - name: Generate checksum
+        run: |
+          cd timu-pair/target/${{ matrix.target }}/release && \
+          sha256sum ${{ matrix.asset }} > ${{ matrix.asset }}.sha256
+
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: timu-pair/target/${{ matrix.target }}/release/${{ matrix.asset }}
+          files: |
+            timu-pair/target/${{ matrix.target }}/release/${{ matrix.asset }}
+            timu-pair/target/${{ matrix.target }}/release/${{ matrix.asset }}.sha256
           fail_on_unmatched_files: true

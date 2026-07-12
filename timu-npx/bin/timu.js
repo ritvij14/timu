@@ -11,7 +11,7 @@ const path = require("path");
 
 // The Rust binary lives next to this script after `npm install`.
 // In dev/test mode, it falls back to a pre-built path.
-const binPath = path.join(__dirname, "timu-pair");
+const binPath = process.env.TIMU_PAIR_BINARY || path.join(__dirname, "timu-pair");
 
 const child = spawn(binPath, process.argv.slice(2), { stdio: "inherit" });
 
@@ -27,4 +27,10 @@ child.on("error", (err) => {
   process.exit(1);
 });
 
-child.on("exit", (code) => process.exit(code || 0));
+child.on("exit", (code, signal) => {
+  if (signal) {
+    process.kill(process.pid, signal);
+    return;
+  }
+  process.exit(code ?? 1);
+});

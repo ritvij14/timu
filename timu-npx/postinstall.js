@@ -6,19 +6,28 @@
 //   e.g. timu-pair-linux-x64, timu-pair-darwin-arm64
 //
 // These are published as release assets on GitHub. The script fetches
-// the one matching the host platform and saves it to bin/timu-pair.
+// the one matching the host platform, verifies its SHA-256 checksum,
+// and saves it to bin/timu-pair.
+//
+// Test seams (env vars, not for end-user use):
+//   TIMU_POSTINSTALL_PLATFORM  — override process.platform
+//   TIMU_POSTINSTALL_ARCH     — override process.arch
+//   TIMU_POSTINSTALL_URL_BASE — override the GitHub release URL prefix
+//   TIMU_POSTINSTALL_BIN_DIR  — override the bin/ destination directory
 
+const http = require("http");
 const https = require("https");
 const fs = require("fs");
 const path = require("path");
-const { execSync } = require("child_process");
+const crypto = require("crypto");
 
 const REPO = "ritvij14/timu";
 const VERSION = "0.1.0"; // kept in sync with package.json + Cargo.toml + release.yml
 
-// Map process.platform + process.arch to the release asset name.
+// Map platform + arch to the release asset name.
 function platformAsset() {
-  const { platform, arch } = process;
+  const platform = process.env.TIMU_POSTINSTALL_PLATFORM || process.platform;
+  const arch = process.env.TIMU_POSTINSTALL_ARCH || process.arch;
 
   const map = {
     "linux-x64": "timu-pair-linux-x64",
@@ -31,10 +40,10 @@ function platformAsset() {
   const asset = map[key];
 
   if (!asset) {
-    console.warn(`timu: no pre-built binary for ${key}.`);
-    console.warn(`timu: build from source with: cd timu-pair && cargo build --release`);
-    console.warn(`timu: then copy target/release/timu-pair to timu-npx/bin/`);
-    process.exit(0); // not a hard failure — user can build manually
+    console.error(`timu: no pre-built binary for ${key}.`);
+    console.error(`timu: build from source with: cd timu-pair && cargo build --release`);
+    console.error(`timu: then copy target/release/timu-pair to timu-npx/bin/`);
+    process.exit(1); // hard failure — user must build from source
   }
 
   return asset;
@@ -63,7 +72,8 @@ function download(url, dest) {
       });
     }
 
-    https.get(url, handleResponse).on("error", (err) => {
+    const client = url.startsWith("https") ? https : http;
+    client.get(url, handleResponse).on("error", (err) => {
       file.close();
       if (fs.existsSync(dest)) fs.unlinkSync(dest);
       reject(err);
@@ -71,29 +81,81 @@ function download(url, dest) {
   });
 }
 
+// Compute SHA-256 of a file, return lowercase hex string.
+function sha256File(filePath) {
+  const data = fs.readFileSync(filePath);
+  return crypto.createHash("sha256").update(data).digest("hex");
+}
+
+// Parse the .sha256 file content: "<hash>  <filename>" → just the hash.
+function parseChecksum(content) {
+  const hash = content.trim().split(/\s+/)[0].toLowerCase();
+  return hash;
+}
+
 async function main() {
   const asset = platformAsset();
-  const binDir = path.join(__dirname, "bin");
+  const binDir = process.env.TIMU_POSTINSTALL_BIN_DIR || path.join(__dirname, "bin");
   const dest = path.join(binDir, "timu-pair");
 
   // If binary already exists (e.g. dev mode), skip download.
   if (fs.existsSync(dest)) {
     console.log("timu: binary already present, skipping download.");
-    return;
+    process.exit(0);
   }
 
-  const url = `https://github.com/${REPO}/releases/download/v${VERSION}/${asset}`;
-  console.log(`timu: downloading ${asset} from GitHub releases...`);
+  const urlBase =
+    process.env.TIMU_POSTINSTALL_URL_BASE ||
+    `https://github.com/${REPO}/releases/download/v${VERSION}`;
+  const binaryUrl = `${urlBase}/${asset}`;
+  const checksumUrl = `${binaryUrl}.sha256`;
+
+  console.log(`timu: downloading ${asset} ...`);
 
   try {
-    await download(url, dest);
+    // Download the binary.
+    await download(binaryUrl, dest);
+
+    // Download the checksum file.
+    let checksumContent;
+    try {
+      const checksumDest = dest + ".sha256.tmp";
+      await download(checksumUrl, checksumDest);
+      checksumContent = fs.readFileSync(checksumDest, "utf8");
+      fs.unlinkSync(checksumDest);
+    } catch (err) {
+      if (fs.existsSync(dest)) fs.unlinkSync(dest);
+      console.error(`timu: checksum download failed — ${err.message}`);
+      console.error("timu: you can build from source: cd timu-pair && cargo build --release");
+      console.error("timu: then copy target/release/timu-pair to timu-npx/bin/");
+      process.exit(1);
+    }
+
+    // Verify checksum.
+    const expected = parseChecksum(checksumContent);
+    const actual = sha256File(dest);
+
+    if (expected !== actual) {
+      fs.unlinkSync(dest);
+      console.error(`timu: checksum mismatch for ${asset}`);
+      console.error(`timu: expected ${expected}`);
+      console.error(`timu: got      ${actual}`);
+      console.error("timu: you can build from source: cd timu-pair && cargo build --release");
+      console.error("timu: then copy target/release/timu-pair to timu-npx/bin/");
+      process.exit(1);
+    }
+
+    // Checksum verified — make executable.
     fs.chmodSync(dest, 0o755);
     console.log("timu: installed successfully.");
+    process.exit(0);
   } catch (err) {
-    console.warn(`timu: download failed — ${err.message}`);
-    console.warn("timu: you can build from source: cd timu-pair && cargo build --release");
-    console.warn("timu: then copy target/release/timu-pair to timu-npx/bin/");
-    process.exit(0); // don't fail npm install for users who can build
+    // Download failure — clean up any partial file.
+    if (fs.existsSync(dest)) fs.unlinkSync(dest);
+    console.error(`timu: download failed — ${err.message}`);
+    console.error("timu: you can build from source: cd timu-pair && cargo build --release");
+    console.error("timu: then copy target/release/timu-pair to timu-npx/bin/");
+    process.exit(1);
   }
 }
 

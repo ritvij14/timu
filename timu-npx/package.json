@@ -5,8 +5,13 @@
   "bin": {
     "timu": "bin/timu.js"
   },
+  "files": [
+    "bin/timu.js",
+    "postinstall.js"
+  ],
   "scripts": {
-    "postinstall": "node postinstall.js"
+    "postinstall": "node postinstall.js",
+    "test": "node --test"
   },
   "repository": {
     "type": "git",
