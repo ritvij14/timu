@@ -1,4 +1,4 @@
-import { Link } from 'expo-router';
+import { Link, router } from 'expo-router';
 import { StyleSheet, Text, View } from 'react-native';
 import { SymbolView } from 'expo-symbols';
 
@@ -7,42 +7,41 @@ import { ScreenShell } from '@/components/onboarding/screen-shell';
 import { useTheme } from '@/hooks/use-theme';
 import { Fonts, Spacing } from '@/constants/theme';
 
-export default function EmptySessionsScreen() {
+export default function PairedSuccessScreen() {
   const theme = useTheme();
 
   return (
-    <ScreenShell title="Sessions" showBack={false}>
+    <ScreenShell title="Paired" showBack={false}>
       <View style={styles.center}>
         <View
           style={[
             styles.iconCircle,
-            { backgroundColor: theme.backgroundElement },
+            { backgroundColor: theme.success + '20' },
           ]}>
           <SymbolView
-            name="desktopcomputer"
+            name="checkmark.circle.fill"
             type="hierarchical"
-            tintColor={theme.textSecondary}
-            size={32}
+            tintColor={theme.success}
+            size={40}
             weight="regular"
             fallback={
-              <Text style={[styles.fallbackIcon, { color: theme.textSecondary }]}>⌘</Text>
+              <Text style={[styles.fallbackIcon, { color: theme.success }]} numberOfLines={1}>
+                ✓
+              </Text>
             }
           />
         </View>
 
-        <Text style={[styles.heading, { color: theme.text }]}>No machines paired yet</Text>
-        <Text style={[styles.subtitle, { color: theme.textSecondary }]} numberOfLines={2}>
-          Pair a machine to run coding sessions from your phone.
+        <Text style={[styles.heading, { color: theme.text }]}>Paired with mac-mini-home</Text>
+        <Text style={[styles.subtitle, { color: theme.textSecondary }]} numberOfLines={3}>
+          Your device key is stored securely on this phone. It won’t need the pairing code again.
         </Text>
       </View>
 
       <View style={styles.footer}>
-        <Link href="/pair" asChild>
-          <Button title="Pair a machine →" />
+        <Link href="/readiness" asChild>
+          <Button title="Continue" />
         </Link>
-        <Text style={[styles.hint, { color: theme.textSecondary }]} numberOfLines={2}>
-          Takes about 30 seconds
-        </Text>
       </View>
     </ScreenShell>
   );
@@ -58,15 +57,15 @@ const styles = StyleSheet.create({
     marginTop: -Spacing.six,
   },
   iconCircle: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
+    width: 88,
+    height: 88,
+    borderRadius: 44,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: Spacing.two,
   },
   fallbackIcon: {
-    fontSize: 32,
+    fontSize: 40,
   },
   heading: {
     fontSize: 22,
@@ -82,12 +81,6 @@ const styles = StyleSheet.create({
   },
   footer: {
     marginTop: 'auto',
-    gap: Spacing.two,
     paddingTop: Spacing.four,
-  },
-  hint: {
-    fontSize: 13,
-    textAlign: 'center',
-    fontFamily: Fonts.sans,
   },
 });

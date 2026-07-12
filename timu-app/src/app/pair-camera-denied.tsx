@@ -1,4 +1,4 @@
-import { Link } from 'expo-router';
+import { router } from 'expo-router';
 import { StyleSheet, Text, View } from 'react-native';
 import { SymbolView } from 'expo-symbols';
 
@@ -7,11 +7,13 @@ import { ScreenShell } from '@/components/onboarding/screen-shell';
 import { useTheme } from '@/hooks/use-theme';
 import { Fonts, Spacing } from '@/constants/theme';
 
-export default function EmptySessionsScreen() {
+export default function PairCameraDeniedScreen() {
   const theme = useTheme();
 
   return (
-    <ScreenShell title="Sessions" showBack={false}>
+    <ScreenShell
+      title="Pair a machine"
+      onBack={() => router.back()}>
       <View style={styles.center}>
         <View
           style={[
@@ -19,30 +21,27 @@ export default function EmptySessionsScreen() {
             { backgroundColor: theme.backgroundElement },
           ]}>
           <SymbolView
-            name="desktopcomputer"
+            name="xmark.circle"
             type="hierarchical"
-            tintColor={theme.textSecondary}
+            tintColor={theme.danger}
             size={32}
             weight="regular"
             fallback={
-              <Text style={[styles.fallbackIcon, { color: theme.textSecondary }]}>⌘</Text>
+              <Text style={[styles.fallbackIcon, { color: theme.danger }]} numberOfLines={1}>
+                📷🚫
+              </Text>
             }
           />
         </View>
 
-        <Text style={[styles.heading, { color: theme.text }]}>No machines paired yet</Text>
-        <Text style={[styles.subtitle, { color: theme.textSecondary }]} numberOfLines={2}>
-          Pair a machine to run coding sessions from your phone.
+        <Text style={[styles.heading, { color: theme.text }]}>Camera access needed</Text>
+        <Text style={[styles.subtitle, { color: theme.textSecondary }]} numberOfLines={3}>
+          Turn on camera access to scan the pairing code.
         </Text>
       </View>
 
       <View style={styles.footer}>
-        <Link href="/pair" asChild>
-          <Button title="Pair a machine →" />
-        </Link>
-        <Text style={[styles.hint, { color: theme.textSecondary }]} numberOfLines={2}>
-          Takes about 30 seconds
-        </Text>
+        <Button title="Open Settings" onPress={() => {}} />
       </View>
     </ScreenShell>
   );
@@ -66,7 +65,7 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.two,
   },
   fallbackIcon: {
-    fontSize: 32,
+    fontSize: 24,
   },
   heading: {
     fontSize: 22,
@@ -82,12 +81,6 @@ const styles = StyleSheet.create({
   },
   footer: {
     marginTop: 'auto',
-    gap: Spacing.two,
     paddingTop: Spacing.four,
-  },
-  hint: {
-    fontSize: 13,
-    textAlign: 'center',
-    fontFamily: Fonts.sans,
   },
 });
