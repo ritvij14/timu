@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://timu.dev/schemas/pairing-payload-v1.schema.json",
+  "title": "timu Pairing Payload V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "pairing_id",
+    "machine_name",
+    "host",
+    "port",
+    "username",
+    "host_key_fingerprint",
+    "expires_at_unix",
+    "ephemeral_private_key"
+  ],
+  "properties": {
+    "version": { "type": "integer", "const": 1 },
+    "pairing_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9_-]+$"
+    },
+    "machine_name": { "type": "string", "minLength": 1 },
+    "host": { "type": "string", "minLength": 1 },
+    "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+    "username": { "type": "string", "minLength": 1 },
+    "host_key_fingerprint": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^SHA256:[A-Za-z0-9+/]+={0,2}$"
+    },
+    "expires_at_unix": { "type": "integer", "minimum": 1 },
+    "ephemeral_private_key": { "type": "string", "minLength": 1 }
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "pairing_id": "pair-malformed-001",
+  "machine_name": "malformed-example",
+  "host": "192.0.2.40",
+  "port": 22,
+  "username": "developer",
+  "expires_at_unix": 1700000300,
+  "ephemeral_private_key": "SYNTHETIC_MALFORMED_FIXTURE_NOT_A_REAL_KEY"
+}

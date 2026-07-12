@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "pairing_id": "pair-version-002",
+  "machine_name": "future-example",
+  "host": "203.0.113.30",
+  "port": 2222,
+  "username": "developer",
+  "host_key_fingerprint": "SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+  "expires_at_unix": 1700000300,
+  "ephemeral_private_key": "SYNTHETIC_UNSUPPORTED_FIXTURE_NOT_A_REAL_KEY"
+}
