@@ -57,7 +57,7 @@ pub fn wait_for_completion(
     expires_at: u64,
     cancelled: &AtomicBool,
 ) -> Result<(), String> {
-    while system.now() <= expires_at && !cancelled.load(Ordering::SeqCst) {
+    while system.now() < expires_at && !cancelled.load(Ordering::SeqCst) {
         if done.exists() {
             return Ok(());
         }

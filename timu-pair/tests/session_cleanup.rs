@@ -124,6 +124,33 @@ fn completion_marker_ends_wait_before_expiry() {
 }
 
 #[test]
+fn completion_marker_at_exact_expiry_is_rejected() {
+    let root = isolated_root();
+    let done = root.join("done");
+    let system = FakeSystem::starting_at(10, 1);
+    let cancelled = AtomicBool::new(false);
+
+    fs::write(&done, b"paired\n").expect("completion marker");
+    let error = wait_for_completion(&system, &done, 10, &cancelled)
+        .expect_err("expiry boundary should fail closed");
+
+    assert!(
+        error.to_lowercase().contains("expired"),
+        "error should report expiry: {error}"
+    );
+    fs::remove_dir_all(root).expect("remove isolated root");
+}
+
+#[test]
+fn generated_pairing_id_is_opaque_random_bytes_not_time_or_process_shape() {
+    let id = timu_pair::pairing_id_from_random_bytes([0xAB; 16]);
+
+    assert_eq!(id, "abababababababababababababababab");
+    assert!(!id.contains('-'));
+    assert!(!id.contains(&std::process::id().to_string()));
+}
+
+#[test]
 fn timeout_cleanup_removes_only_tagged_temporary_authorization() {
     let parent = isolated_root();
     let root = parent.join("ceremony");

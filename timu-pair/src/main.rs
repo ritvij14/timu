@@ -15,8 +15,8 @@ use qrcode::render::unicode;
 use timu_pair::{
     CleanupGuard, CliOptions, CommandOutput, PairingPayload, System, append_authorized_key_line,
     build_temporary_authorized_key, choose_address, discover_addresses, ensure_ssh_available,
-    is_expired, reject_unsafe_authorized_keys_path, replace_temporary_authorized_key_in_file,
-    wait_for_completion,
+    is_expired, pairing_id_from_random_bytes, reject_unsafe_authorized_keys_path,
+    replace_temporary_authorized_key_in_file, wait_for_completion,
 };
 
 struct RealSystem;
@@ -81,7 +81,7 @@ fn prepare_pairing(
 ) -> Result<(), String> {
     let now = system.now();
     let expires_at = now + 300;
-    let pairing_id = format!("{now}-{}", std::process::id());
+    let pairing_id = new_pairing_id()?;
     let root = env::temp_dir().join(format!("timu-pair-{pairing_id}"));
     fs::create_dir(&root).map_err(|_| "could not create pairing directory")?;
     // The root owns every local ceremony artifact. Register its cleanup before
@@ -164,6 +164,14 @@ fn prepare_pairing(
     println!("Paired successfully. You can return to the timu app.");
     drop(cleanup);
     Ok(())
+}
+
+fn new_pairing_id() -> Result<String, String> {
+    let mut bytes = [0; 16];
+    fs::File::open("/dev/urandom")
+        .and_then(|mut file| file.read_exact(&mut bytes))
+        .map_err(|_| "could not generate pairing id")?;
+    Ok(pairing_id_from_random_bytes(bytes))
 }
 
 impl System for RealSystem {

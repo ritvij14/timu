@@ -4,6 +4,9 @@ use std::os::unix::fs::{PermissionsExt, symlink};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
+
+const VALID_ED25519_PUBLIC_KEY: &str =
+    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAABAgMEBQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4f";
 use std::time::{SystemTime, UNIX_EPOCH};
 
 static TEST_ID: AtomicU64 = AtomicU64::new(0);
@@ -42,7 +45,7 @@ fn complete(authorized_keys: &Path, done: &Path) -> Output {
         .stdin
         .take()
         .expect("completion stdin")
-        .write_all(b"ssh-ed25519 AAAADEVICE timu-device:iphone\n")
+        .write_all(format!("{VALID_ED25519_PUBLIC_KEY} timu-device:iphone\n").as_bytes())
         .expect("device key input");
     child.wait_with_output().expect("completion result")
 }

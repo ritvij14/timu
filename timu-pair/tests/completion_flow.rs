@@ -5,6 +5,9 @@ use std::process::{Command, Output, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+const VALID_ED25519_PUBLIC_KEY: &str =
+    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAABAgMEBQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4f";
+
 static TEST_ID: AtomicU64 = AtomicU64::new(0);
 
 fn isolated_pairing() -> (PathBuf, PathBuf, PathBuf) {
@@ -59,13 +62,13 @@ fn scanning_a_valid_qr_installs_the_iphone_key_without_touching_existing_access(
         &authorized_keys,
         &done,
         "4102444800",
-        "ssh-ed25519 AAAADEVICE timu-device:iphone\n",
+        &format!("{VALID_ED25519_PUBLIC_KEY} timu-device:iphone\n"),
     );
 
     assert!(output.status.success());
     let contents = fs::read_to_string(&authorized_keys).unwrap();
     assert!(contents.contains("ssh-ed25519 AAAAOLD laptop"));
-    assert!(contents.contains("ssh-ed25519 AAAADEVICE timu-device:iphone"));
+    assert!(contents.contains(&format!("{VALID_ED25519_PUBLIC_KEY} timu-device:iphone")));
     assert!(!contents.contains("timu-pair:pair-123"));
     assert!(done.exists());
     fs::remove_dir_all(root).unwrap();
@@ -80,7 +83,7 @@ fn scanning_an_expired_qr_cannot_change_ssh_access() {
         &authorized_keys,
         &done,
         "1",
-        "ssh-ed25519 AAAADEVICE timu-device:iphone\n",
+        &format!("{VALID_ED25519_PUBLIC_KEY} timu-device:iphone\n"),
     );
 
     assert!(!output.status.success());
@@ -116,7 +119,7 @@ fn a_pairing_credential_is_single_use_and_cannot_install_a_second_key() {
             &authorized_keys,
             &done,
             "4102444800",
-            "ssh-ed25519 AAAAFIRST timu-device:iphone\n",
+            &format!("{VALID_ED25519_PUBLIC_KEY} timu-device:iphone\n"),
         )
         .status
         .success()
@@ -127,11 +130,11 @@ fn a_pairing_credential_is_single_use_and_cannot_install_a_second_key() {
         &authorized_keys,
         &done,
         "4102444800",
-        "ssh-ed25519 AAAASECOND timu-device:attacker\n",
+        &format!("{VALID_ED25519_PUBLIC_KEY} timu-device:attacker\n"),
     );
 
     assert!(!replay.status.success());
     assert_eq!(fs::read_to_string(&authorized_keys).unwrap(), after_first);
-    assert!(!after_first.contains("AAAASECOND"));
+    assert!(!after_first.contains("attacker"));
     fs::remove_dir_all(root).unwrap();
 }

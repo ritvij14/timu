@@ -178,9 +178,14 @@ pub fn build_temporary_authorized_key(
     validate_pairing_id(pairing_id)?;
     validate_single_line(helper_path)?;
     validate_public_key(public_key)?;
+    let command = format!("{} {}", shell_quote(helper_path), shell_quote(pairing_id));
     Ok(format!(
-        "command=\"{helper_path} {pairing_id}\",restrict,no-port-forwarding,no-agent-forwarding,no-X11-forwarding,no-pty {public_key} timu-pair:{pairing_id}"
+        "command=\"{command}\",restrict,no-port-forwarding,no-agent-forwarding,no-X11-forwarding,no-pty {public_key} timu-pair:{pairing_id}"
     ))
+}
+
+fn shell_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\\''"))
 }
 
 pub fn replace_temporary_authorized_key(

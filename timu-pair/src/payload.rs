@@ -1,5 +1,5 @@
 use base64::Engine;
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
 use serde::{Deserialize, Serialize};
 
 use crate::PayloadError;
@@ -61,6 +61,10 @@ pub fn is_expired(now_unix: u64, expires_at_unix: u64) -> bool {
     now_unix >= expires_at_unix
 }
 
+pub fn pairing_id_from_random_bytes(bytes: [u8; 16]) -> String {
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
 pub(crate) fn validate_pairing_id(value: &str) -> Result<(), PayloadError> {
     if value.is_empty()
         || !value
@@ -82,10 +86,37 @@ pub(crate) fn validate_single_line(value: &str) -> Result<(), PayloadError> {
 pub(crate) fn validate_public_key(value: &str) -> Result<(), PayloadError> {
     validate_single_line(value)?;
     let mut fields = value.split_whitespace();
-    if fields.next() != Some("ssh-ed25519") || fields.next().is_none() {
+    if fields.next() != Some("ssh-ed25519") {
+        return Err(PayloadError::Invalid);
+    }
+    let encoded = fields.next().ok_or(PayloadError::Invalid)?;
+    if fields.any(|field| field.contains("PRIVATE") || field.contains("BEGIN")) {
+        return Err(PayloadError::Invalid);
+    }
+    let blob = STANDARD
+        .decode(encoded)
+        .map_err(|_| PayloadError::Invalid)?;
+    if !is_ed25519_public_key_blob(&blob) {
         return Err(PayloadError::Invalid);
     }
     Ok(())
+}
+
+fn is_ed25519_public_key_blob(blob: &[u8]) -> bool {
+    let Some((kind, rest)) = read_ssh_string(blob) else {
+        return false;
+    };
+    let Some((key, trailing)) = read_ssh_string(rest) else {
+        return false;
+    };
+    kind == b"ssh-ed25519" && key.len() == 32 && trailing.is_empty()
+}
+
+fn read_ssh_string(bytes: &[u8]) -> Option<(&[u8], &[u8])> {
+    let length = u32::from_be_bytes(bytes.get(..4)?.try_into().ok()?) as usize;
+    let value = bytes.get(4..4 + length)?;
+    let rest = bytes.get(4 + length..)?;
+    Some((value, rest))
 }
 
 fn is_canonical_host_key_fingerprint(value: &str) -> bool {

@@ -6,6 +6,9 @@ use std::thread;
 use std::time::{SystemTime, UNIX_EPOCH};
 use timu_pair::replace_temporary_authorized_key_in_file;
 
+const VALID_ED25519_PUBLIC_KEY: &str =
+    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAABAgMEBQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4f";
+
 static ROOT_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 fn isolated_root() -> PathBuf {
@@ -44,7 +47,7 @@ fn concurrent_handoffs_preserve_unrelated_and_each_other_authorizations() {
             replace_temporary_authorized_key_in_file(
                 &first_path,
                 "pair-a",
-                "ssh-ed25519 AAAAPERMANENT_A timu-device:a",
+                &format!("{VALID_ED25519_PUBLIC_KEY} timu-device:a"),
             )
         });
         let second_path = authorized_keys.clone();
@@ -54,7 +57,7 @@ fn concurrent_handoffs_preserve_unrelated_and_each_other_authorizations() {
             replace_temporary_authorized_key_in_file(
                 &second_path,
                 "pair-b",
-                "ssh-ed25519 AAAAPERMANENT_B timu-device:b",
+                &format!("{VALID_ED25519_PUBLIC_KEY} timu-device:b"),
             )
         });
         barrier.wait();
@@ -66,8 +69,8 @@ fn concurrent_handoffs_preserve_unrelated_and_each_other_authorizations() {
 
         let contents = fs::read_to_string(&authorized_keys).expect("authorization after handoffs");
         assert!(contents.contains("AAAAUNRELATED"));
-        assert!(contents.contains("AAAAPERMANENT_A"));
-        assert!(contents.contains("AAAAPERMANENT_B"));
+        assert!(contents.contains("timu-device:a"));
+        assert!(contents.contains("timu-device:b"));
         assert!(!contents.contains("timu-pair:pair-a"));
         assert!(!contents.contains("timu-pair:pair-b"));
         fs::remove_dir_all(root).expect("remove isolated root");
