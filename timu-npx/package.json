@@ -1,0 +1,30 @@
+{
+  "name": "timu",
+  "version": "0.1.0",
+  "description": "Pair your machine with the timu mobile app — scan a QR code to connect via SSH.",
+  "bin": {
+    "timu": "bin/timu.js"
+  },
+  "scripts": {
+    "postinstall": "node postinstall.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ritvij14/timu.git",
+    "directory": "timu-npx"
+  },
+  "keywords": [
+    "ssh",
+    "tmux",
+    "mobile",
+    "ai-coding",
+    "qr",
+    "pairing"
+  ],
+  "author": "ritvij14",
+  "license": "MIT",
+  "homepage": "https://github.com/ritvij14/timu#readme",
+  "bugs": {
+    "url": "https://github.com/ritvij14/timu/issues"
+  }
+}

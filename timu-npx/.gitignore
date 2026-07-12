@@ -1,0 +1,5 @@
+# Node
+node_modules/
+
+# Pre-built binary (downloaded by postinstall.js, not committed)
+bin/timu-pair

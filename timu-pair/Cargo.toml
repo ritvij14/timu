@@ -1,0 +1,11 @@
+[package]
+name = "timu-pair"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+qrcode = "0.14"
+
+[[bin]]
+name = "timu-pair"
+path = "src/main.rs"
