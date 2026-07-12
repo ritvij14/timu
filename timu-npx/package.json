@@ -1,5 +1,5 @@
 {
-  "name": "timu",
+  "name": "timu-app",
   "version": "0.1.0",
   "description": "Pair your machine with the timu mobile app — scan a QR code to connect via SSH.",
   "bin": {

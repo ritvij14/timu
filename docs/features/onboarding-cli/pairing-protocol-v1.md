@@ -1,6 +1,6 @@
 # Permanent-Key Pairing Protocol V1
 
-This document defines the language-neutral contract between the `npx timu` pairing CLI, the target machine's OpenSSH server, and the timu app. It covers only the one-time handoff from a temporary pairing credential to a device-generated permanent SSH key. Readiness checks and app screen design are outside this contract.
+This document defines the language-neutral contract between the `npx timu-app` pairing CLI, the target machine's OpenSSH server, and the timu app. It covers only the one-time handoff from a temporary pairing credential to a device-generated permanent SSH key. Readiness checks and app screen design are outside this contract.
 
 The key words **MUST**, **MUST NOT**, **SHOULD**, and **MAY** are normative.
 

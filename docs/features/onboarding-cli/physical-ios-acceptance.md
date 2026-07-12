@@ -24,13 +24,13 @@ Use this path first. It matches the first physical-device target: the developer'
 Run on the Mac:
 
 ```bash
-npx timu
+npx timu-app
 ```
 
 Optional local override if discovery is wrong:
 
 ```bash
-npx timu --host <mac-lan-ip-or-hostname> --user <ssh-user> --port 22
+npx timu-app --host <mac-lan-ip-or-hostname> --user <ssh-user> --port 22
 ```
 
 Expected evidence:
@@ -125,7 +125,7 @@ Run after the Mac-first path passes. This is the same protocol with a public or 
 ### VPS command
 
 ```bash
-npx timu --host <vps-public-dns-or-ip> --user <ssh-user> --port <ssh-port>
+npx timu-app --host <vps-public-dns-or-ip> --user <ssh-user> --port <ssh-port>
 ```
 
 ### VPS-specific checks

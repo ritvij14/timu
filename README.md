@@ -24,7 +24,7 @@ V0 covers:
 - **Language:** Rust 2024 (core library), TypeScript (mobile app)
 - **Frontend:** Expo / React Native with Expo Router
 - **Core:** Rust library crate (`timu-core`) exposed to RN via FFI (UniFFI planned)
-- **Pairing:** `timu-pair` native CLI, distributed through `npx timu`
+- **Pairing:** `timu-pair` native CLI, distributed through `npx timu-app`
 - **Data:** SQLite via `rusqlite` (Rust-owned; no cloud sync in V0)
 - **Transport:** SSH (`russh`), SFTP (`russh-sftp`), tmux on the user's own machine
 - **Hosting:** App Store / Play Store target; no hosted backend
@@ -84,7 +84,7 @@ Core modules:
 - `timu-core/` — Rust library: SSH transport, host-key TOFU pinning, machine readiness, folder listing, SQLite persistence, tmux session engine
 - `timu-app/` — Expo / React Native UI (chat-first, drives timu-core over FFI)
 - `timu-pair/` — Native pairing CLI that runs the one-time QR-based onboarding ceremony
-- `timu-npx/` — `npx timu` launcher: downloads the platform binary and verifies release-artifact checksums before running it
+- `timu-npx/` — `npx timu-app` launcher: downloads the platform binary and verifies release-artifact checksums before running it
 
 Documentation:
 
@@ -142,7 +142,7 @@ A user can:
 
 - SSH secrets (passwords, private keys, passphrases) never live in the persisted `MachineProfile`; they stay in platform secure storage and are supplied at connect time.
 - Host keys are verified with trust-on-first-use (TOFU): the fingerprint is shown to the user on first connect and pinned for every subsequent connect.
-- The one-time `npx timu` pairing credential is short-lived, restricted to a single forced operation, and cleaned up on success, timeout, interruption, or failure.
+- The one-time `npx timu-app` pairing credential is short-lived, restricted to a single forced operation, and cleaned up on success, timeout, interruption, or failure.
 - V0 has no analytics, telemetry, cloud accounts, or hosted backend.
 
 See `AGENTS.md` §2 for the full hard-block security rules.

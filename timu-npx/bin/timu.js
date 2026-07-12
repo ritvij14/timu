@@ -4,7 +4,7 @@
 // Runs the timu-pair Rust binary which detects the local network IP,
 // current username, and SSH port, then renders a QR code in the terminal.
 //
-// Usage: npx timu [--host <ip>] [--user <name>] [--port <port>]
+// Usage: npx timu-app [--host <ip>] [--user <name>] [--port <port>]
 
 const { spawn } = require("child_process");
 const path = require("path");

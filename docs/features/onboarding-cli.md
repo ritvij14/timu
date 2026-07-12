@@ -1,10 +1,10 @@
 # Onboarding CLI
 
-> `npx timu` is the one-time SSH pairing ceremony for the timu mobile app. The canonical product flow is `docs/prds/v0-prd.md` §6; project security rules are in `AGENTS.md` §2.
+> `npx timu-app` is the one-time SSH pairing ceremony for the timu mobile app. The canonical product flow is `docs/prds/v0-prd.md` §6; project security rules are in `AGENTS.md` §2.
 
 ## 1. What this owns
 
-- `timu-npx/` — npm distribution and platform-binary launcher exposed as `npx timu`
+- `timu-npx/` — npm distribution and platform-binary launcher exposed as `npx timu-app`
 - `timu-pair/` — native macOS/Linux pairing CLI
 - SSH availability checks and an explicit macOS Remote Login enablement offer
 - Wi-Fi, Ethernet, and Tailscale address discovery/selection; `--host` override for VPS targets
@@ -17,7 +17,7 @@ It does not own mobile screens, permanent private-key storage, readiness probing
 
 ## 2. User flow
 
-1. User runs `npx timu`.
+1. User runs `npx timu-app`.
 2. CLI verifies SSH availability. On macOS it may explicitly offer to enable Remote Login through the OS authorization flow.
 3. CLI discovers supported addresses. One candidate is automatic; multiple candidates are selected by entering an option number.
 4. CLI creates a five-minute restricted pairing credential and prints the SSH host-key fingerprint beside a QR.
@@ -66,7 +66,7 @@ Strict TDD applies. Tests are requirements-driven, not derived from the existing
 - Rust integration tests: isolated temporary-file and subprocess coverage for pairing handoff; no real user SSH configuration is touched.
 - Node tests: platform asset selection, launcher argument/exit propagation, download failures, and integrity checks.
 - Package smoke test: `npm pack`, install the tarball in a temporary directory, and execute the packaged launcher against a controlled fake binary.
-- Manual acceptance after automation: run `npx timu` on macOS, scan from a physical iPhone, compare fingerprints, provision the device key, reconnect, and validate the same flow against a VPS target.
+- Manual acceptance after automation: run `npx timu-app` on macOS, scan from a physical iPhone, compare fingerprints, provision the device key, reconnect, and validate the same flow against a VPS target.
 
 Current automated coverage includes Rust tests for payload round-trips; expiry-boundary, version, unknown-field, and fixture validation; CLI overrides and address classification; temporary-key restrictions; line-preserving permanent-key handoff; injection/missing-ID rejection; expired-QR rejection; malformed-device-key rejection; single-use enforcement; symlinked `.ssh`/`authorized_keys` rejection; unsafe `authorized_keys` modes; cleanup after startup failure and cancellation; concurrent authorization mutation; and the hidden completion subprocess against temporary files. Node tests cover launcher argument/exit-code propagation and missing-binary recovery; unsupported platforms; download failure cleanup; checksum mismatch cleanup and verified-download permissions; plus `npm pack`, temporary installation, and packaged-launcher smoke execution. These automated tests do not perform physical iPhone pairing, macOS Remote Login enablement, or VPS acceptance; those remain manual acceptance work.
 

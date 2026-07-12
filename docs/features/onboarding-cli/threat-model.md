@@ -1,6 +1,6 @@
 # Onboarding Pairing Threat Model
 
-This is the V0 threat model for the `npx timu` permanent-key pairing flow. It covers the local CLI, OpenSSH temporary authorization, QR payload, and future mobile client contract. It does not add hosted services, telemetry, cloud sync, or mobile UI architecture.
+This is the V0 threat model for the `npx timu-app` permanent-key pairing flow. It covers the local CLI, OpenSSH temporary authorization, QR payload, and future mobile client contract. It does not add hosted services, telemetry, cloud sync, or mobile UI architecture.
 
 ## Assets
 
