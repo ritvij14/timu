@@ -112,3 +112,30 @@ fn concurrent_temporary_authorizations_preserve_each_ceremony() {
     assert!(contents.contains("AAAATEMP_B"));
     fs::remove_dir_all(root).expect("remove isolated root");
 }
+
+#[test]
+fn duplicate_live_pairing_id_is_rejected_without_appending_another_authorization() {
+    let root = isolated_root();
+    let authorized_keys = root.join("authorized_keys");
+    fs::write(
+        &authorized_keys,
+        concat!(
+            "ssh-ed25519 AAAAUNRELATED laptop\n",
+            "restrict ssh-ed25519 AAAATEMP_A timu-pair:pair-a\n",
+        ),
+    )
+    .expect("authorization fixture");
+
+    let error = timu_pair::append_authorized_key_line(
+        &authorized_keys,
+        "restrict ssh-ed25519 AAAATEMP_B timu-pair:pair-a",
+    )
+    .expect_err("duplicate live pairing ID should fail");
+
+    assert_eq!(error.to_string(), "invalid pairing payload");
+    let contents = fs::read_to_string(&authorized_keys).expect("authorization after duplicate");
+    assert!(contents.contains("AAAAUNRELATED"));
+    assert_eq!(contents.matches("timu-pair:pair-a").count(), 1);
+    assert!(!contents.contains("AAAATEMP_B"));
+    fs::remove_dir_all(root).expect("remove isolated root");
+}

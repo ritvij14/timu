@@ -1,6 +1,6 @@
 use std::fs;
 use std::io::Write;
-use std::os::unix::fs::symlink;
+use std::os::unix::fs::{PermissionsExt, symlink};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -88,6 +88,48 @@ fn pairing_rejects_a_symlinked_ssh_directory_without_modifying_its_target() {
 
     assert!(!output.status.success());
     assert_eq!(fs::read_to_string(&target).expect("target after"), before);
+    assert!(!done.exists());
+    fs::remove_dir_all(root).expect("remove isolated root");
+}
+
+#[test]
+fn pairing_handoff_preserves_authorized_keys_permissions() {
+    let root = isolated_root();
+    let authorized_keys = root.join("authorized_keys");
+    let done = root.join("done");
+    fs::write(&authorized_keys, temporary_authorization()).expect("authorization fixture");
+    fs::set_permissions(&authorized_keys, fs::Permissions::from_mode(0o640))
+        .expect("fixture permissions");
+
+    let output = complete(&authorized_keys, &done);
+
+    assert!(output.status.success());
+    let mode = fs::metadata(&authorized_keys)
+        .expect("authorized_keys metadata")
+        .permissions()
+        .mode()
+        & 0o777;
+    assert_eq!(mode, 0o640);
+    fs::remove_dir_all(root).expect("remove isolated root");
+}
+
+#[test]
+fn pairing_rejects_group_or_world_writable_authorized_keys() {
+    let root = isolated_root();
+    let authorized_keys = root.join("authorized_keys");
+    let done = root.join("done");
+    fs::write(&authorized_keys, temporary_authorization()).expect("authorization fixture");
+    fs::set_permissions(&authorized_keys, fs::Permissions::from_mode(0o666))
+        .expect("unsafe fixture permissions");
+    let before = fs::read_to_string(&authorized_keys).expect("authorized_keys before");
+
+    let output = complete(&authorized_keys, &done);
+
+    assert!(!output.status.success());
+    assert_eq!(
+        fs::read_to_string(&authorized_keys).expect("authorized_keys after"),
+        before
+    );
     assert!(!done.exists());
     fs::remove_dir_all(root).expect("remove isolated root");
 }

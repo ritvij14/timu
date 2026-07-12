@@ -1,6 +1,5 @@
 use std::fs;
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Duration;
 use timu_pair::{CleanupGuard, System, wait_for_completion};
@@ -181,12 +180,7 @@ fn injectable_cancellation_boundary_removes_only_tagged_temporary_authorization(
 
     let system = FakeSystem::starting_at(0, 1);
     let done = root.join("done");
-    let cancelled = Arc::new(AtomicBool::new(false));
-    let worker_cancelled = Arc::clone(&cancelled);
-
-    std::thread::spawn(move || {
-        worker_cancelled.store(true, Ordering::SeqCst);
-    });
+    let cancelled = AtomicBool::new(true);
 
     let mut cleanup = CleanupGuard::new(root.clone(), "pair-cancel".into());
     cleanup.register_authorization(authorized_keys.clone());
