@@ -28,6 +28,12 @@ It does not own mobile screens, permanent private-key storage, readiness probing
 
 ## 3. Pairing contract
 
+Detailed supporting docs:
+
+- [`onboarding-cli/pairing-protocol-v1.md`](onboarding-cli/pairing-protocol-v1.md) — language-neutral V1 protocol and app-facing error contract.
+- [`onboarding-cli/threat-model.md`](onboarding-cli/threat-model.md) — V0 pairing assets, trust boundaries, threats, controls, and residual risks.
+- [`onboarding-cli/physical-ios-acceptance.md`](onboarding-cli/physical-ios-acceptance.md) — Mac-first physical iPhone acceptance checklist plus VPS variation.
+
 The QR payload is versioned and contains only what the app needs for the one-time ceremony:
 
 - protocol version
@@ -62,7 +68,7 @@ Strict TDD applies. Tests are requirements-driven, not derived from the existing
 - Package smoke test: `npm pack`, install the tarball in a temporary directory, and execute the packaged launcher against a controlled fake binary.
 - Manual acceptance after automation: run `npx timu` on macOS, scan from a physical iPhone, compare fingerprints, provision the device key, reconnect, and validate the same flow against a VPS target.
 
-Current automated coverage: 26 Rust integration tests cover payload round-trips; expiry-boundary, version, unknown-field, and fixture validation; CLI overrides and address classification; temporary-key restrictions; line-preserving permanent-key handoff; injection/missing-ID rejection; expired-QR rejection; malformed-device-key rejection; single-use enforcement; symlinked `.ssh`/`authorized_keys` rejection; cleanup after startup failure and cancellation; concurrent authorization mutation; and the hidden completion subprocess against temporary files. Seven Node tests cover launcher argument/exit-code propagation and missing-binary recovery; unsupported platforms; download failure cleanup; checksum mismatch cleanup and verified-download permissions; plus `npm pack`, temporary installation, and packaged-launcher smoke execution. These automated tests do not perform physical iPhone pairing, macOS Remote Login enablement, or VPS acceptance; those remain manual acceptance work.
+Current automated coverage includes Rust tests for payload round-trips; expiry-boundary, version, unknown-field, and fixture validation; CLI overrides and address classification; temporary-key restrictions; line-preserving permanent-key handoff; injection/missing-ID rejection; expired-QR rejection; malformed-device-key rejection; single-use enforcement; symlinked `.ssh`/`authorized_keys` rejection; unsafe `authorized_keys` modes; cleanup after startup failure and cancellation; concurrent authorization mutation; and the hidden completion subprocess against temporary files. Node tests cover launcher argument/exit-code propagation and missing-binary recovery; unsupported platforms; download failure cleanup; checksum mismatch cleanup and verified-download permissions; plus `npm pack`, temporary installation, and packaged-launcher smoke execution. These automated tests do not perform physical iPhone pairing, macOS Remote Login enablement, or VPS acceptance; those remain manual acceptance work.
 
 Commands:
 

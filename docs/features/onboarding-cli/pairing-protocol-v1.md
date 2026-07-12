@@ -110,7 +110,7 @@ When OpenSSH authenticates the temporary key, the forced command MUST run regard
 4. locate exactly one line whose final whitespace-delimited token is `timu-pair:<pairing_id>`;
 5. reject a missing or duplicate matching temporary line without mutation;
 6. replace that line with the submitted permanent public-key line while preserving unrelated lines;
-7. write the complete result to a same-filesystem temporary file with mode `0600`, then atomically rename it over `authorized_keys`;
+7. write the complete result to a same-filesystem temporary file using the existing `authorized_keys` mode, then atomically rename it over `authorized_keys`;
 8. create the local completion marker only after the atomic replacement succeeds; and
 9. exit zero only after both the authorization replacement and completion marker succeed.
 
@@ -210,4 +210,4 @@ The current `timu-pair` implementation establishes the V1 QR field names and enc
 
 The following V1 requirements are app/client integration contracts rather than behavior implemented in `timu-pair`: canonical payload and Ed25519 public-key validation, exact host-key comparison and explicit trust, stable app-facing result/error mapping, secure device-key generation/storage, interpreting the remote exit status, and permanent-key reconnect. The current forced command reports malformed, missing, duplicate, and replayed cases through one generic validation error; app-facing code MUST map by protocol phase without exposing its raw error text.
 
-Authorization mutations are serialized with an adjacent `0600` lock file; each operation revalidates the directory and `authorized_keys` path after acquiring the lock and atomically renames a `0600` same-directory replacement file. This implementation and its automated coverage do not replace the required physical-iPhone, macOS Remote Login, and VPS acceptance work.
+Authorization mutations are serialized with an adjacent `0600` lock file; each operation revalidates the directory and `authorized_keys` path after acquiring the lock and atomically renames a same-directory replacement file that preserves the existing `authorized_keys` mode. This implementation and its automated coverage do not replace the required physical-iPhone, macOS Remote Login, and VPS acceptance work.
