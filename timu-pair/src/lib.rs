@@ -8,6 +8,7 @@ use std::io::Write;
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
 
 const QR_PREFIX: &str = "timu://pair?data=";
 
@@ -191,6 +192,148 @@ fn reject_symlink(path: &Path) -> Result<(), PayloadError> {
 /// QR decoder and the forced command agree on when a credential is expired.
 pub fn is_expired(now_unix: u64, expires_at_unix: u64) -> bool {
     now_unix >= expires_at_unix
+}
+
+/// Captured result of a command run through [`System::command`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommandOutput {
+    pub stdout: String,
+    pub stderr: String,
+    pub status: i32,
+}
+
+/// Narrow seam around command execution, user prompts, time, and the local
+/// network so that system-dependent CLI behavior can be faked in tests.
+pub trait System {
+    fn family(&self) -> &'static str;
+    fn command(&self, program: &str, args: &[&str]) -> Result<CommandOutput, String>;
+    fn prompt(&self, question: &str) -> Result<String, String>;
+    fn now(&self) -> u64;
+    fn tcp_reachable(&self, host: &str, port: u16, timeout: Duration) -> bool;
+    fn route_address(&self) -> Option<String>;
+}
+
+/// Verifies that an SSH listener is reachable on `127.0.0.1:port`.
+///
+/// On macOS, if the listener is not reachable the user is asked whether to
+/// enable Remote Login. A "no" response fails without invoking `sudo`, and
+/// a failed OS authorization fails without creating pairing credentials.
+pub fn ensure_ssh_available(system: &dyn System, port: u16) -> Result<(), String> {
+    if system.tcp_reachable("127.0.0.1", port, Duration::from_millis(300)) {
+        return Ok(());
+    }
+    if system.family() != "macos" {
+        return Err(format!("SSH is not listening on port {port}"));
+    }
+    let answer = system
+        .prompt("macOS Remote Login appears disabled. Enable it now? [y/N] ")?
+        .trim()
+        .to_ascii_lowercase();
+    if !matches!(answer.as_str(), "y" | "yes") {
+        return Err("Remote Login is required for pairing".into());
+    }
+    let output = system.command("sudo", &["systemsetup", "-setremotelogin", "on"])?;
+    if output.status != 0 {
+        return Err("failed to enable Remote Login".into());
+    }
+    Ok(())
+}
+
+/// Chooses the address the phone should use to reach this machine.
+///
+/// A single candidate is returned automatically. Multiple candidates are
+/// presented through `prompt`, which receives the full menu text and must
+/// return the user's answer.
+pub fn choose_address<P>(candidates: Vec<AddressCandidate>, mut prompt: P) -> Result<String, String>
+where
+    P: FnMut(&str) -> Result<String, String>,
+{
+    if candidates.len() == 1 {
+        return Ok(candidates[0].address.clone());
+    }
+    let mut menu = String::from("How should your phone reach this machine?\n\n");
+    for (index, item) in candidates.iter().enumerate() {
+        let kind = match item.kind {
+            AddressKind::Wifi => "Wi-Fi",
+            AddressKind::Ethernet => "Ethernet",
+            AddressKind::Tailscale => "Tailscale",
+        };
+        menu.push_str(&format!("{}. {:<10} {}\n", index + 1, kind, item.address));
+    }
+    menu.push_str("\nEnter option number: ");
+    let answer = prompt(&menu)?;
+    let index = answer
+        .trim()
+        .parse::<usize>()
+        .map_err(|_| "enter a valid option number".to_string())?;
+    candidates
+        .get(index.saturating_sub(1))
+        .map(|item| item.address.clone())
+        .ok_or_else(|| "option number is out of range".into())
+}
+
+/// Discovers Wi-Fi, Ethernet, and Tailscale address candidates using the
+/// injectable [`System`] seam so tests can supply synthetic command output.
+pub fn discover_addresses(system: &dyn System) -> Result<Vec<AddressCandidate>, String> {
+    let mut found = if system.family() == "macos" {
+        discover_macos_lan_addresses(system)
+    } else {
+        system
+            .route_address()
+            .map(|address| vec![AddressCandidate::new("eth0", &address)])
+            .unwrap_or_default()
+    };
+    if let Ok(output) = system.command("tailscale", &["ip", "-4"]) {
+        if output.status == 0 {
+            for line in output.stdout.lines() {
+                let trimmed = line.trim();
+                if !trimmed.is_empty() {
+                    found.push(AddressCandidate::new("tailscale0", trimmed));
+                }
+            }
+        }
+    }
+    found.sort_by(|a, b| a.address.cmp(&b.address));
+    found.dedup_by(|a, b| a.address == b.address);
+    if found.is_empty() {
+        Err("no Wi-Fi, Ethernet, or Tailscale address found; use --host".into())
+    } else {
+        Ok(found)
+    }
+}
+
+fn discover_macos_lan_addresses(system: &dyn System) -> Vec<AddressCandidate> {
+    let Ok(output) = system.command("networksetup", &["-listallhardwareports"]) else {
+        return Vec::new();
+    };
+    if output.status != 0 {
+        return Vec::new();
+    }
+    let mut kind = None;
+    let mut found = Vec::new();
+    for line in output.stdout.lines() {
+        if let Some(port) = line.strip_prefix("Hardware Port: ") {
+            kind = if port.contains("Wi-Fi") {
+                Some(AddressKind::Wifi)
+            } else if port.contains("Ethernet") {
+                Some(AddressKind::Ethernet)
+            } else {
+                None
+            };
+        } else if let Some(device) = line.strip_prefix("Device: ") {
+            if let Some(_kind) = kind {
+                if let Ok(address) = system.command("ipconfig", &["getifaddr", device]) {
+                    if address.status == 0 {
+                        let value = address.stdout.trim().to_string();
+                        if !value.is_empty() {
+                            found.push(AddressCandidate::new(device, &value));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    found
 }
 
 impl PairingPayload {

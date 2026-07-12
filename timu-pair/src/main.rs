@@ -13,10 +13,12 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use qrcode::QrCode;
 use qrcode::render::unicode;
 use timu_pair::{
-    AddressCandidate, AddressKind, CleanupGuard, CliOptions, PairingPayload,
-    append_authorized_key_line, build_temporary_authorized_key, is_expired,
-    reject_unsafe_authorized_keys_path, replace_temporary_authorized_key_in_file,
+    CleanupGuard, CliOptions, CommandOutput, PairingPayload, System, append_authorized_key_line,
+    build_temporary_authorized_key, choose_address, discover_addresses, ensure_ssh_available,
+    is_expired, reject_unsafe_authorized_keys_path, replace_temporary_authorized_key_in_file,
 };
+
+struct RealSystem;
 
 fn main() {
     if let Err(error) = run() {
@@ -31,10 +33,13 @@ fn run() -> Result<(), String> {
         return complete_pairing(&args);
     }
     let options = CliOptions::parse(args).map_err(|error| error.to_string())?;
-    ensure_ssh_available(options.port)?;
+    let system = RealSystem;
+    ensure_ssh_available(&system, options.port)?;
     let host = match options.host {
         Some(host) => host,
-        None => choose_address(discover_addresses()?)?,
+        None => choose_address(discover_addresses(&system)?, |question| {
+            system.prompt(question)
+        })?,
     };
     let username = options
         .username
@@ -165,127 +170,56 @@ fn prepare_pairing(host: String, username: String, port: u16) -> Result<(), Stri
     }
 }
 
-fn ensure_ssh_available(port: u16) -> Result<(), String> {
-    if TcpStream::connect_timeout(
-        &format!("127.0.0.1:{port}")
+impl System for RealSystem {
+    fn family(&self) -> &'static str {
+        env::consts::OS
+    }
+
+    fn command(&self, program: &str, args: &[&str]) -> Result<CommandOutput, String> {
+        let output = Command::new(program)
+            .args(args)
+            .stdin(Stdio::inherit())
+            .output()
+            .map_err(|e| e.to_string())?;
+        Ok(CommandOutput {
+            stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+            status: output.status.code().unwrap_or(-1),
+        })
+    }
+
+    fn prompt(&self, question: &str) -> Result<String, String> {
+        print!("{question}");
+        io::stdout().flush().map_err(|e| e.to_string())?;
+        let mut answer = String::new();
+        io::stdin()
+            .read_line(&mut answer)
+            .map_err(|e| e.to_string())?;
+        Ok(answer)
+    }
+
+    fn now(&self) -> u64 {
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_secs())
+            .unwrap_or(0)
+    }
+
+    fn tcp_reachable(&self, host: &str, port: u16, timeout: Duration) -> bool {
+        format!("{host}:{port}")
             .parse()
-            .map_err(|_| "invalid port")?,
-        Duration::from_millis(300),
-    )
-    .is_ok()
-    {
-        return Ok(());
+            .ok()
+            .and_then(|address| TcpStream::connect_timeout(&address, timeout).ok())
+            .is_some()
     }
-    if env::consts::OS != "macos" {
-        return Err(format!("SSH is not listening on port {port}"));
+
+    fn route_address(&self) -> Option<String> {
+        let socket = UdpSocket::bind("0.0.0.0:0").ok()?;
+        socket.connect("8.8.8.8:80").ok()?;
+        Some(socket.local_addr().ok()?.ip().to_string())
     }
-    print!("macOS Remote Login appears disabled. Enable it now? [y/N] ");
-    io::stdout().flush().map_err(|e| e.to_string())?;
-    let mut answer = String::new();
-    io::stdin()
-        .read_line(&mut answer)
-        .map_err(|e| e.to_string())?;
-    if !matches!(answer.trim().to_ascii_lowercase().as_str(), "y" | "yes") {
-        return Err("Remote Login is required for pairing".into());
-    }
-    run_status(
-        Command::new("sudo").args(["systemsetup", "-setremotelogin", "on"]),
-        "enable Remote Login",
-    )
 }
 
-fn discover_addresses() -> Result<Vec<AddressCandidate>, String> {
-    let mut found = if env::consts::OS == "macos" {
-        discover_macos_lan_addresses()
-    } else {
-        detect_route_address()
-            .map(|address| vec![AddressCandidate::new("eth0", &address)])
-            .unwrap_or_default()
-    };
-    if let Ok(output) = Command::new("tailscale").arg("ip").arg("-4").output()
-        && output.status.success()
-    {
-        for line in String::from_utf8_lossy(&output.stdout).lines() {
-            found.push(AddressCandidate::new("tailscale0", line.trim()));
-        }
-    }
-    found.sort_by(|a, b| a.address.cmp(&b.address));
-    found.dedup_by(|a, b| a.address == b.address);
-    if found.is_empty() {
-        Err("no Wi-Fi, Ethernet, or Tailscale address found; use --host".into())
-    } else {
-        Ok(found)
-    }
-}
-fn discover_macos_lan_addresses() -> Vec<AddressCandidate> {
-    let Ok(output) = Command::new("networksetup")
-        .arg("-listallhardwareports")
-        .output()
-    else {
-        return Vec::new();
-    };
-    let mut kind = None;
-    let mut found = Vec::new();
-    for line in String::from_utf8_lossy(&output.stdout).lines() {
-        if let Some(port) = line.strip_prefix("Hardware Port: ") {
-            kind = if port.contains("Wi-Fi") {
-                Some(AddressKind::Wifi)
-            } else if port.contains("Ethernet") {
-                Some(AddressKind::Ethernet)
-            } else {
-                None
-            };
-        } else if let (Some(kind), Some(device)) = (kind, line.strip_prefix("Device: "))
-            && let Ok(address) = Command::new("ipconfig")
-                .args(["getifaddr", device])
-                .output()
-            && address.status.success()
-        {
-            let value = String::from_utf8_lossy(&address.stdout).trim().to_string();
-            if !value.is_empty() {
-                found.push(AddressCandidate {
-                    interface: device.into(),
-                    address: value,
-                    kind,
-                });
-            }
-        }
-    }
-    found
-}
-fn detect_route_address() -> Option<String> {
-    let socket = UdpSocket::bind("0.0.0.0:0").ok()?;
-    socket.connect("8.8.8.8:80").ok()?;
-    Some(socket.local_addr().ok()?.ip().to_string())
-}
-fn choose_address(candidates: Vec<AddressCandidate>) -> Result<String, String> {
-    if candidates.len() == 1 {
-        return Ok(candidates[0].address.clone());
-    }
-    println!("How should your phone reach this machine?\n");
-    for (index, item) in candidates.iter().enumerate() {
-        let kind = match item.kind {
-            AddressKind::Wifi => "Wi-Fi",
-            AddressKind::Ethernet => "Ethernet",
-            AddressKind::Tailscale => "Tailscale",
-        };
-        println!("{}. {:<10} {}", index + 1, kind, item.address);
-    }
-    print!("\nEnter option number: ");
-    io::stdout().flush().map_err(|e| e.to_string())?;
-    let mut answer = String::new();
-    io::stdin()
-        .read_line(&mut answer)
-        .map_err(|e| e.to_string())?;
-    let index = answer
-        .trim()
-        .parse::<usize>()
-        .map_err(|_| "enter a valid option number")?;
-    candidates
-        .get(index.saturating_sub(1))
-        .map(|item| item.address.clone())
-        .ok_or_else(|| "option number is out of range".into())
-}
 fn authorized_keys_path() -> Result<PathBuf, String> {
     let home = env::var_os("HOME").ok_or("HOME is not set")?;
     Ok(PathBuf::from(home).join(".ssh/authorized_keys"))
