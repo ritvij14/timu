@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="en"><head><script id="aura-preview-performance-controller">
+(function() {
+if (window.__auraPreviewPerformanceController) return;
+const nativeRequestAnimationFrame = window.requestAnimationFrame
+? window.requestAnimationFrame.bind(window)
+: function(callback) { return window.setTimeout(function() { callback(Date.now()); }, 16); };
+const nativeCancelAnimationFrame = window.cancelAnimationFrame
+? window.cancelAnimationFrame.bind(window)
+: window.clearTimeout.bind(window);
+const nativeSetInterval = window.setInterval.bind(window);
+let paused = false;
+let nextFrameId = 1;
+const frameRecords = new Map();
+const pausedFrameCallbacks = new Map();
+const style = document.createElement('style');
+style.id = 'aura-preview-performance-style';
+style.textContent = [
+'html[data-aura-preview-paused="true"] *,',
+'html[data-aura-preview-paused="true"] *::before,',
+'html[data-aura-preview-paused="true"] *::after {',
+'  animation-play-state: paused !important;',
+'  transition-duration: 0s !important;',
+'  scroll-behavior: auto !important;',
+'}'
+].join('\n');
+document.head.appendChild(style);
+window.requestAnimationFrame = function(callback) {
+const frameId = nextFrameId++;
+if (paused) {
+pausedFrameCallbacks.set(frameId, callback);
+frameRecords.set(frameId, { paused: true });
+return frameId;
+}
+const nativeFrameId = nativeRequestAnimationFrame(function(timestamp) {
+frameRecords.delete(frameId);
+callback(timestamp);
+});
+frameRecords.set(frameId, { nativeFrameId: nativeFrameId });
+return frameId;
+};
+window.cancelAnimationFrame = function(frameId) {
+const record = frameRecords.get(frameId);
+pausedFrameCallbacks.delete(frameId);
+if (record && typeof record.nativeFrameId !== 'undefined') {
+nativeCancelAnimationFrame(record.nativeFrameId);
+}
+frameRecords.delete(frameId);
+};
+window.setInterval = function(callback, delay) {
+const args = Array.prototype.slice.call(arguments, 2);
+return nativeSetInterval(function() {
+if (paused) return;
+callback.apply(this, args);
+}, delay);
+};
+const flushPausedFrames = function() {
+const callbacks = Array.from(pausedFrameCallbacks.entries());
+pausedFrameCallbacks.clear();
+callbacks.forEach(function(entry) {
+const frameId = entry[0];
+const callback = entry[1];
+const nativeFrameId = nativeRequestAnimationFrame(function(timestamp) {
+frameRecords.delete(frameId);
+callback(timestamp);
+});
+frameRecords.set(frameId, { nativeFrameId: nativeFrameId });
+});
+};
+const setPaused = function(nextPaused) {
+const shouldPause = Boolean(nextPaused);
+if (paused === shouldPause) return;
+paused = shouldPause;
+document.documentElement.toggleAttribute('data-aura-preview-paused', paused);
+if (!paused) {
+flushPausedFrames();
+}
+};
+window.__auraPreviewPerformanceController = {
+setPaused: setPaused,
+get paused() {
+return paused;
+}
+};
+window.addEventListener('message', function(event) {
+if (event.source !== window.parent) return;
+if (!event.data || event.data.type !== 'aura-preview-performance-mode') return;
+setPaused(event.data.paused);
+});
+})();
+</script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Session Setup Flow</title>
+<!-- Fonts -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<!-- Tailwind -->
+<script src="https://cdn.tailwindcss.com"></script>
+<!-- Iconify -->
+<script src="https://code.iconify.design/iconify-icon/1.0.7/iconify-icon.min.js"></script>
+<style>
+.no-scrollbar::-webkit-scrollbar {
+display: none;
+}
+.no-scrollbar {
+-ms-overflow-style: none;
+scrollbar-width: none;
+}
+@keyframes toastUp {
+from { transform: translateY(16px); opacity: 0; }
+to { transform: translateY(0); opacity: 1; }
+}
+.animate-toast-up {
+animation: toastUp 0.4s ease-out forwards;
+}
+@keyframes spinSlow {
+to { transform: rotate(360deg); }
+}
+.animate-spin-slow {
+animation: spinSlow 0.8s linear infinite;
+}
+</style></head>
+<body class="bg-[#0A0A0A] text-neutral-300 font-sans antialiased min-h-screen pb-32" style="font-family: 'Inter', sans-serif;">
+
+    <!-- Top Documentation Header -->
+    <header class="max-w-7xl mx-auto px-6 py-20 lg:px-12">
+        <div class="inline-flex items-center gap-3 mb-6 flex-wrap">
+            <span class="font-mono text-xs font-medium tracking-wider text-teal-400 bg-teal-500/10 px-3 py-1.5 rounded-md border border-teal-500/20 uppercase">
+                Round 2 · Session Setup
+            </span>
+            <span class="font-mono text-xs text-neutral-500">
+                PRD v1.1 §9–§11 · PRODUCT-RULES.md §1, §6–§8
+            </span>
+        </div>
+        <h1 class="text-4xl font-medium text-neutral-100 tracking-tight mb-4">
+            Session setup
+        </h1>
+        <p class="text-sm text-neutral-400 max-w-2xl leading-relaxed">
+            Folder → child type → agent, three taps, recognition over recall throughout. A folder is strictly 1:1 with a session, so "new" silently becomes "open existing" the moment it needs to.
+        </p>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-6 lg:px-12 flex flex-col gap-32">
+        
+        <!-- SECTION 00: Folder Picker -->
+        <section>
+            <div class="flex items-center gap-3 mb-2">
+                <span class="font-mono text-xs font-medium text-teal-400 bg-teal-500/10 px-2.5 py-1 rounded border border-teal-500/20">00</span>
+                <h2 class="text-xl font-medium text-neutral-100 tracking-tight">Folder picker</h2>
+            </div>
+            <p class="text-sm text-neutral-400 mb-12 max-w-2xl">
+                Recents first, git status visible inline, a worktree called out as its own future session. Paths render in mono — they're real filesystem data, not app copy.
+            </p>
+
+            <div class="flex flex-wrap items-start gap-12">
+                
+                <!-- Frame 1: Folder Picker -->
+                <div class="flex flex-col gap-5">
+                    <div class="w-[360px] h-[780px] bg-neutral-950 border-[6px] border-neutral-900 rounded-[3rem] overflow-hidden flex flex-col shadow-2xl relative shrink-0">
+                        
+                        <!-- Status Bar -->
+                        <div class="h-12 flex justify-between items-center px-6 pt-3 pb-1 text-xs font-medium text-neutral-500">
+                            <span>9:41</span>
+                            <div class="w-28 h-6 bg-black rounded-full absolute left-1/2 -translate-x-1/2 top-2"></div>
+                            <div class="flex gap-1.5 items-center">
+                                <iconify-icon icon="solar:cellular-linear"></iconify-icon>
+                                <iconify-icon icon="solar:wi-fi-linear"></iconify-icon>
+                                <iconify-icon icon="solar:battery-charge-linear"></iconify-icon>
+                            </div>
+                        </div>
+
+                        <!-- Header -->
+                        <div class="flex items-center justify-between px-4 py-2">
+                            <button class="w-8 h-8 flex items-center justify-center text-neutral-400 hover:text-neutral-200 transition-colors">
+                                <iconify-icon icon="solar:alt-arrow-left-linear" class="text-xl"></iconify-icon>
+                            </button>
+                            <span class="text-sm font-medium text-neutral-200">New session</span>
+                            <div class="w-8 h-8"></div>
+                        </div>
+                        
+                        <!-- Machine indicator -->
+                        <div class="flex justify-center pb-3">
+                            <div class="flex items-center gap-2 px-3 py-1 rounded-full bg-neutral-900 border border-white/5">
+                                <div class="w-1.5 h-1.5 rounded-full bg-emerald-400"></div>
+                                <span class="font-mono text-xs text-neutral-400" style="font-family: 'JetBrains Mono', monospace;">mac-mini-home</span>
+                            </div>
+                        </div>
+
+                        <!-- Search -->
+                        <div class="px-4 pb-3">
+                            <div class="flex items-center gap-2 bg-neutral-900 border border-white/5 rounded-xl px-3 py-2.5">
+                                <iconify-icon icon="solar:magnifer-linear" class="text-neutral-500 text-lg"></iconify-icon>
+                                <span class="text-sm text-neutral-500">Search folders</span>
+                            </div>
+                        </div>
+
+                        <!-- List -->
+                        <div class="px-5 pt-3 pb-2">
+                            <span class="font-mono text-[10px] font-medium tracking-wider text-neutral-500 uppercase">Recent folders on mac-mini-home</span>
+                        </div>
+
+                        <div class="flex-1 overflow-y-auto no-scrollbar px-3">
+                            <div class="flex items-center gap-3 p-3 rounded-2xl hover:bg-neutral-900/50 transition-colors cursor-pointer group">
+                                <div class="flex-1 min-w-0 flex flex-col gap-1">
+                                    <span class="font-mono text-sm text-neutral-200 truncate" style="font-family: 'JetBrains Mono', monospace;">~/code/kendal-crm</span>
+                                    <span class="text-xs text-neutral-500 truncate">git · main · last commit 2h ago</span>
+                                </div>
+                                <iconify-icon icon="solar:star-linear" class="text-neutral-600 group-hover:text-neutral-400 text-lg transition-colors"></iconify-icon>
+                            </div>
+
+                            <div class="flex items-center gap-3 p-3 rounded-2xl hover:bg-neutral-900/50 transition-colors cursor-pointer group">
+                                <div class="flex-1 min-w-0 flex flex-col gap-1">
+                                    <span class="font-mono text-sm text-neutral-200 truncate" style="font-family: 'JetBrains Mono', monospace;">~/code/kendal-crm-feat-auth</span>
+                                    <span class="text-xs text-neutral-500 truncate">worktree of kendal-crm · feat/auth</span>
+                                </div>
+                                <iconify-icon icon="solar:star-linear" class="text-neutral-600 group-hover:text-neutral-400 text-lg transition-colors"></iconify-icon>
+                            </div>
+
+                            <div class="flex items-center gap-3 p-3 rounded-2xl hover:bg-neutral-900/50 transition-colors cursor-pointer group">
+                                <div class="flex-1 min-w-0 flex flex-col gap-1">
+                                    <span class="font-mono text-sm text-neutral-200 truncate" style="font-family: 'JetBrains Mono', monospace;">~/code/blog-api</span>
+                                    <span class="text-xs text-neutral-500 truncate">git · main · 3d ago</span>
+                                </div>
+                                <iconify-icon icon="solar:star-linear" class="text-neutral-600 group-hover:text-neutral-400 text-lg transition-colors"></iconify-icon>
+                            </div>
+
+                            <button class="w-full flex items-center justify-between p-3 mt-2 rounded-2xl text-teal-400 hover:bg-teal-500/10 transition-colors group">
+                                <span class="text-sm font-medium">Browse all folders</span>
+                                <iconify-icon icon="solar:alt-arrow-right-linear" class="text-lg opacity-50 group-hover:opacity-100 transition-opacity"></iconify-icon>
+                            </button>
+                        </div>
+                        
+                        <!-- Footer Text -->
+                        <div class="px-8 pb-8 text-center border-t border-white/5 pt-4 bg-neutral-950">
+                            <span class="text-xs text-neutral-500 leading-relaxed block">
+                                A folder that already has a session opens that session — never a duplicate.
+                            </span>
+                        </div>
+
+                        <!-- Home Indicator -->
+                        <div class="absolute bottom-1.5 left-1/2 -translate-x-1/2 w-32 h-1 bg-white/20 rounded-full"></div>
+                    </div>
+                    
+                    <p class="font-mono text-xs text-neutral-500 max-w-[360px] leading-relaxed">
+                        PRD §9 · RULES §7 · recognition over recall — recents, git status and favorites shown; nothing is typed.
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- SECTION 01: The "+" sheet -->
+        <section>
+            <div class="flex items-center gap-3 mb-2">
+                <span class="font-mono text-xs font-medium text-teal-400 bg-teal-500/10 px-2.5 py-1 rounded border border-teal-500/20">01</span>
+                <h2 class="text-xl font-medium text-neutral-100 tracking-tight">The "+" sheet — exactly two child types</h2>
+            </div>
+            <p class="text-sm text-neutral-400 mb-12 max-w-2xl">
+                Nothing a third option. Foreign terminals are discovered, never created — they simply aren't a choice here.
+            </p>
+
+            <div class="flex flex-wrap items-start gap-12">
+                
+                <!-- Frame 2: Child Type -->
+                <div class="flex flex-col gap-4">
+                    <span class="font-mono text-[10px] font-medium tracking-wider text-neutral-500 uppercase">Step 1 · Child Type</span>
+                    <div class="w-[360px] h-[780px] bg-neutral-950 border-[6px] border-neutral-900 rounded-[3rem] overflow-hidden flex flex-col shadow-2xl relative shrink-0">
+                        
+                        <!-- Dimmed Background Content -->
+                        <div class="absolute inset-0 opacity-40 blur-[1px]">
+                            <div class="h-12 px-6 pt-3"><div class="w-28 h-6 bg-black rounded-full absolute left-1/2 -translate-x-1/2 top-2"></div></div>
+                            <div class="flex items-center justify-between px-4 py-2 mt-4">
+                                <iconify-icon icon="solar:alt-arrow-left-linear" class="text-xl text-neutral-400"></iconify-icon>
+                                <span class="text-sm font-medium text-neutral-200">kendal-crm · feat/auth</span>
+                                <iconify-icon icon="solar:add-circle-linear" class="text-xl text-neutral-400"></iconify-icon>
+                            </div>
+                            <div class="flex gap-2 px-4 py-2">
+                                <div class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-teal-500/10 border border-teal-500/20 text-xs font-medium text-teal-400">
+                                    claude <div class="w-1.5 h-1.5 rounded-full bg-teal-400"></div>
+                                </div>
+                                <div class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-neutral-900 border border-white/5 text-xs font-medium text-neutral-400">
+                                    cmd <iconify-icon icon="solar:close-circle-linear"></iconify-icon>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Overlay -->
+                        <div class="absolute inset-0 bg-black/60 z-10"></div>
+
+                        <!-- Bottom Sheet -->
+                        <div class="absolute bottom-0 inset-x-0 bg-neutral-900 border-t border-white/10 rounded-t-[2.5rem] p-5 pb-10 z-20 shadow-[0_-20px_50px_rgba(0,0,0,0.5)]">
+                            <div class="w-10 h-1 bg-white/10 rounded-full mx-auto mb-6"></div>
+                            
+                            <div class="mb-5">
+                                <span class="font-mono text-[10px] font-medium tracking-wider text-neutral-500 uppercase block text-center">Add to kendal-crm · feat/auth</span>
+                            </div>
+                            
+                            <div class="flex flex-col gap-2.5">
+                                <div class="flex items-center gap-3.5 p-3.5 bg-neutral-800/50 hover:bg-neutral-800 border border-white/5 rounded-2xl cursor-pointer transition-colors group">
+                                    <div class="w-10 h-10 rounded-xl bg-teal-500/10 flex items-center justify-center shrink-0">
+                                        <iconify-icon icon="solar:magic-stick-3-linear" class="text-xl text-teal-400"></iconify-icon>
+                                    </div>
+                                    <div class="flex-1 min-w-0">
+                                        <div class="text-sm font-medium text-neutral-200 mb-0.5">New agent</div>
+                                        <div class="text-xs text-neutral-500 truncate">Claude Code · OpenCode · Codex</div>
+                                    </div>
+                                    <iconify-icon icon="solar:alt-arrow-right-linear" class="text-neutral-600 group-hover:text-neutral-400 transition-colors text-lg"></iconify-icon>
+                                </div>
+
+                                <div class="flex items-center gap-3.5 p-3.5 bg-neutral-800/50 hover:bg-neutral-800 border border-white/5 rounded-2xl cursor-pointer transition-colors group">
+                                    <div class="w-10 h-10 rounded-xl bg-neutral-950 border border-white/5 flex items-center justify-center shrink-0">
+                                        <span class="font-mono text-sm text-neutral-400 font-medium" style="font-family: 'JetBrains Mono', monospace;">$_</span>
+                                    </div>
+                                    <div class="flex-1 min-w-0">
+                                        <div class="text-sm font-medium text-neutral-200 mb-0.5">New command window</div>
+                                        <div class="text-xs text-neutral-500 truncate">Opens empty — type any shell command</div>
+                                    </div>
+                                    <iconify-icon icon="solar:alt-arrow-right-linear" class="text-neutral-600 group-hover:text-neutral-400 transition-colors text-lg"></iconify-icon>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="absolute bottom-1.5 left-1/2 -translate-x-1/2 w-32 h-1 bg-white/20 rounded-full z-30"></div>
+                    </div>
+                    
+                    <p class="font-mono text-xs text-neutral-500 max-w-[360px] leading-relaxed">
+                        RULES §1, §6 · PRD §10 revision note · agent or command window — the whole list.
+                    </p>
+                </div>
+
+                <!-- Frame 3: Agent Sub-picker -->
+                <div class="flex flex-col gap-4">
+                    <span class="font-mono text-[10px] font-medium tracking-wider text-neutral-500 uppercase">Step 2 · Agent Sub-picker</span>
+                    <div class="w-[360px] h-[780px] bg-neutral-950 border-[6px] border-neutral-900 rounded-[3rem] overflow-hidden flex flex-col shadow-2xl relative shrink-0">
+                        
+                        <div class="absolute inset-0 opacity-40 blur-[1px]">
+                            <div class="h-12 px-6 pt-3"><div class="w-28 h-6 bg-black rounded-full absolute left-1/2 -translate-x-1/2 top-2"></div></div>
+                            <div class="flex items-center justify-between px-4 py-2 mt-4">
+                                <iconify-icon icon="solar:alt-arrow-left-linear" class="text-xl text-neutral-400"></iconify-icon>
+                                <span class="text-sm font-medium text-neutral-200">kendal-crm · feat/auth</span>
+                                <iconify-icon icon="solar:add-circle-linear" class="text-xl text-neutral-400"></iconify-icon>
+                            </div>
+                        </div>
+
+                        <div class="absolute inset-0 bg-black/60 z-10"></div>
+
+                        <div class="absolute bottom-0 inset-x-0 bg-neutral-900 border-t border-white/10 rounded-t-[2.5rem] p-5 pb-10 z-20 shadow-[0_-20px_50px_rgba(0,0,0,0.5)]">
+                            <div class="w-10 h-1 bg-white/10 rounded-full mx-auto mb-6"></div>
+                            
+                            <div class="flex items-center gap-3 mb-5 px-2">
+                                <iconify-icon icon="solar:alt-arrow-left-linear" class="text-neutral-400 text-lg"></iconify-icon>
+                                <span class="font-mono text-[10px] font-medium tracking-wider text-neutral-400 uppercase">Choose an agent</span>
+                            </div>
+                            
+                            <div class="flex flex-col gap-2">
+                                <div class="flex items-center gap-3.5 p-3.5 bg-neutral-800 border border-white/5 rounded-2xl">
+                                    <div class="w-9 h-9 rounded-xl bg-teal-500/10 flex items-center justify-center shrink-0">
+                                        <span class="font-mono text-sm text-teal-400 font-medium" style="font-family: 'JetBrains Mono', monospace;">C</span>
+                                    </div>
+                                    <span class="flex-1 text-sm font-medium text-neutral-200">Claude Code</span>
+                                    <span class="text-xs font-medium text-emerald-400">Ready</span>
+                                </div>
+
+                                <div class="flex items-center gap-3.5 p-3.5 bg-neutral-800 border border-white/5 rounded-2xl">
+                                    <div class="w-9 h-9 rounded-xl bg-teal-500/10 flex items-center justify-center shrink-0">
+                                        <span class="font-mono text-sm text-teal-400 font-medium" style="font-family: 'JetBrains Mono', monospace;">O</span>
+                                    </div>
+                                    <span class="flex-1 text-sm font-medium text-neutral-200">OpenCode</span>
+                                    <span class="text-xs font-medium text-emerald-400">Ready</span>
+                                </div>
+
+                                <div class="flex items-center gap-3.5 p-3.5 rounded-2xl opacity-50">
+                                    <div class="w-9 h-9 rounded-xl bg-neutral-950 border border-white/5 flex items-center justify-center shrink-0">
+                                        <span class="font-mono text-sm text-neutral-500 font-medium" style="font-family: 'JetBrains Mono', monospace;">X</span>
+                                    </div>
+                                    <span class="flex-1 text-sm font-medium text-neutral-400">Codex</span>
+                                    <span class="text-xs font-medium text-neutral-500">Not installed</span>
+                                </div>
+                            </div>
+                            
+                            <div class="mt-6 text-center">
+                                <span class="text-xs text-neutral-500">Only installed agents can start a session.</span>
+                            </div>
+                        </div>
+
+                        <div class="absolute bottom-1.5 left-1/2 -translate-x-1/2 w-32 h-1 bg-white/20 rounded-full z-30"></div>
+                    </div>
+                    
+                    <p class="font-mono text-xs text-neutral-500 max-w-[360px] leading-relaxed">
+                        PRD §10 · not-installed rows stay visible, just inert.
+                    </p>
+                </div>
+
+                <!-- Frame 4: The 1:1 Redirect -->
+                <div class="flex flex-col gap-4">
+                    <span class="font-mono text-[10px] font-medium tracking-wider text-neutral-500 uppercase">The 1:1 Redirect</span>
+                    <div class="w-[360px] h-[780px] bg-neutral-950 border-[6px] border-neutral-900 rounded-[3rem] overflow-hidden flex flex-col shadow-2xl relative shrink-0">
+                        
+                        <div class="h-12 flex justify-between items-center px-6 pt-3 pb-1">
+                            <div class="w-28 h-6 bg-black rounded-full absolute left-1/2 -translate-x-1/2 top-2"></div>
+                        </div>
+
+                        <div class="flex items-center justify-between px-4 py-2">
+                            <button class="w-8 h-8 flex items-center justify-center text-neutral-400">
+                                <iconify-icon icon="solar:alt-arrow-left-linear" class="text-xl"></iconify-icon>
+                            </button>
+                            <span class="text-sm font-medium text-neutral-200">New session</span>
+                            <div class="w-8 h-8"></div>
+                        </div>
+
+                        <div class="px-5 pt-4 pb-2">
+                            <span class="font-mono text-[10px] font-medium tracking-wider text-neutral-500 uppercase">Recent folders on mac-mini-home</span>
+                        </div>
+
+                        <div class="px-3">
+                            <div class="flex items-center gap-3 p-3 bg-neutral-900/80 border border-white/5 rounded-2xl">
+                                <div class="flex-1 min-w-0 flex flex-col gap-1">
+                                    <span class="font-mono text-sm text-neutral-200 truncate" style="font-family: 'JetBrains Mono', monospace;">~/code/kendal-crm</span>
+                                    <span class="text-xs text-neutral-500 truncate">git · main · session already open</span>
+                                </div>
+                                <div class="w-2 h-2 rounded-full bg-emerald-400 shrink-0"></div>
+                            </div>
+                            
+                            <div class="flex items-center gap-3 p-3 rounded-2xl opacity-50 mt-1">
+                                <div class="flex-1 min-w-0 flex flex-col gap-1">
+                                    <span class="font-mono text-sm text-neutral-200 truncate" style="font-family: 'JetBrains Mono', monospace;">~/code/blog-api</span>
+                                    <span class="text-xs text-neutral-500 truncate">git · main · 3d ago</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="flex-1"></div>
+                        
+                        <!-- Toast Notification -->
+                        <div class="m-4 p-4 bg-neutral-800 border border-white/10 rounded-2xl shadow-2xl animate-toast-up z-20">
+                            <div class="flex items-center gap-3 mb-2">
+                                <div class="w-4 h-4 rounded-full border-2 border-teal-500 border-t-transparent animate-spin-slow shrink-0"></div>
+                                <span class="text-sm font-medium text-neutral-100">Opening kendal-crm · main</span>
+                            </div>
+                            <p class="text-xs text-neutral-400 leading-relaxed">
+                                This folder already has a session — resuming it, not creating a new one.
+                            </p>
+                        </div>
+
+                        <div class="absolute bottom-1.5 left-1/2 -translate-x-1/2 w-32 h-1 bg-white/20 rounded-full"></div>
+                    </div>
+                    
+                    <p class="font-mono text-xs text-neutral-500 max-w-[360px] leading-relaxed">
+                        PRD §11 revision note · RULES §1, §8 · "new" on a folder that already has a session silently becomes "open existing" — no dead-end, no duplicate.
+                    </p>
+                </div>
+
+            </div>
+        </section>
+
+    </main>
+
+</body></html>

@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="en"><head><script id="aura-preview-performance-controller">
+(function() {
+if (window.__auraPreviewPerformanceController) return;
+const nativeRequestAnimationFrame = window.requestAnimationFrame
+? window.requestAnimationFrame.bind(window)
+: function(callback) { return window.setTimeout(function() { callback(Date.now()); }, 16); };
+const nativeCancelAnimationFrame = window.cancelAnimationFrame
+? window.cancelAnimationFrame.bind(window)
+: window.clearTimeout.bind(window);
+const nativeSetInterval = window.setInterval.bind(window);
+let paused = false;
+let nextFrameId = 1;
+const frameRecords = new Map();
+const pausedFrameCallbacks = new Map();
+const style = document.createElement('style');
+style.id = 'aura-preview-performance-style';
+style.textContent = [
+'html[data-aura-preview-paused="true"] *,',
+'html[data-aura-preview-paused="true"] *::before,',
+'html[data-aura-preview-paused="true"] *::after {',
+'  animation-play-state: paused !important;',
+'  transition-duration: 0s !important;',
+'  scroll-behavior: auto !important;',
+'}'
+].join('\n');
+document.head.appendChild(style);
+window.requestAnimationFrame = function(callback) {
+const frameId = nextFrameId++;
+if (paused) {
+pausedFrameCallbacks.set(frameId, callback);
+frameRecords.set(frameId, { paused: true });
+return frameId;
+}
+const nativeFrameId = nativeRequestAnimationFrame(function(timestamp) {
+frameRecords.delete(frameId);
+callback(timestamp);
+});
+frameRecords.set(frameId, { nativeFrameId: nativeFrameId });
+return frameId;
+};
+window.cancelAnimationFrame = function(frameId) {
+const record = frameRecords.get(frameId);
+pausedFrameCallbacks.delete(frameId);
+if (record && typeof record.nativeFrameId !== 'undefined') {
+nativeCancelAnimationFrame(record.nativeFrameId);
+}
+frameRecords.delete(frameId);
+};
+window.setInterval = function(callback, delay) {
+const args = Array.prototype.slice.call(arguments, 2);
+return nativeSetInterval(function() {
+if (paused) return;
+callback.apply(this, args);
+}, delay);
+};
+const flushPausedFrames = function() {
+const callbacks = Array.from(pausedFrameCallbacks.entries());
+pausedFrameCallbacks.clear();
+callbacks.forEach(function(entry) {
+const frameId = entry[0];
+const callback = entry[1];
+const nativeFrameId = nativeRequestAnimationFrame(function(timestamp) {
+frameRecords.delete(frameId);
+callback(timestamp);
+});
+frameRecords.set(frameId, { nativeFrameId: nativeFrameId });
+});
+};
+const setPaused = function(nextPaused) {
+const shouldPause = Boolean(nextPaused);
+if (paused === shouldPause) return;
+paused = shouldPause;
+document.documentElement.toggleAttribute('data-aura-preview-paused', paused);
+if (!paused) {
+flushPausedFrames();
+}
+};
+window.__auraPreviewPerformanceController = {
+setPaused: setPaused,
+get paused() {
+return paused;
+}
+};
+window.addEventListener('message', function(event) {
+if (event.source !== window.parent) return;
+if (!event.data || event.data.type !== 'aura-preview-performance-mode') return;
+setPaused(event.data.paused);
+});
+})();
+</script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lifecycle &amp; Connection States</title>
+<!-- Fonts -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<!-- Tailwind -->
+<script src="https://cdn.tailwindcss.com"></script>
+<!-- Iconify -->
+<script src="https://code.iconify.design/iconify-icon/1.0.7/iconify-icon.min.js"></script>
+<style>
+.no-scrollbar::-webkit-scrollbar {
+display: none;
+}
+.no-scrollbar {
+-ms-overflow-style: none;
+scrollbar-width: none;
+}
+iconify-icon {
+--iconify-stroke-width: 1.5;
+}
+</style></head>
+<body class="bg-[#09090b] text-zinc-100 antialiased min-h-screen pb-32" style="font-family: 'Inter', sans-serif;">
+
+    <!-- Top Documentation Header -->
+    <header class="max-w-7xl mx-auto px-6 py-16 lg:px-12">
+        <div class="inline-flex items-center gap-3 mb-6 flex-wrap">
+            <span class="font-mono text-xs font-medium tracking-wider text-teal-950 bg-teal-400 px-3 py-1.5 rounded-md uppercase shadow-sm">
+                Round 7 · Lifecycle &amp; Connection
+            </span>
+            <span class="font-mono text-xs text-zinc-500">
+                PRD v1.1 §13, §17 · PRODUCT-RULES.md §3, §8
+            </span>
+        </div>
+        <h1 class="text-4xl font-semibold text-zinc-100 tracking-tight mb-4">
+            Lifecycle &amp; connection states
+        </h1>
+        <p class="text-sm text-zinc-400 max-w-2xl leading-relaxed">
+            Nothing closes itself. A dropped connection is framed as the phone losing sight of the machine, never the session dying — and the one truly destructive act in this app is closing a session outright, so it gets the heaviest friction of anything here.
+        </p>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-6 lg:px-12 flex flex-col gap-24">
+        
+        <!-- SECTION 00: Idle Session -->
+        <section>
+            <div class="flex items-center gap-3 mb-2">
+                <span class="font-mono text-xs font-medium text-teal-950 bg-teal-400 px-2.5 py-1 rounded">00</span>
+                <h2 class="text-xl font-medium text-zinc-100 tracking-tight">Idle session</h2>
+            </div>
+            <p class="text-sm text-zinc-500 mb-10 max-w-2xl leading-relaxed">
+                Closing the last child leaves the session idle and listed — never auto-closed. Re-entering offers exactly two things, plus a one-tap repeat of what it last ran.
+            </p>
+
+            <div class="flex flex-col gap-4">
+                
+                <div class="w-[360px] h-[780px] bg-zinc-950 border-[6px] border-zinc-900 rounded-[3rem] overflow-hidden flex flex-col shadow-2xl relative shrink-0">
+                    <!-- Status Bar -->
+                    <div class="h-12 flex justify-between items-center px-6 pt-3 pb-1 text-xs font-medium text-zinc-500 z-10 bg-zinc-950">
+                        <span>9:41</span>
+                        <div class="w-28 h-6 bg-black rounded-full absolute left-1/2 -translate-x-1/2 top-2"></div>
+                        <div class="flex gap-1.5 items-center">
+                            <iconify-icon icon="solar:cellular-linear"></iconify-icon>
+                            <iconify-icon icon="solar:wi-fi-linear"></iconify-icon>
+                            <iconify-icon icon="solar:battery-charge-linear"></iconify-icon>
+                        </div>
+                    </div>
+
+                    <!-- Top Nav -->
+                    <div class="px-3 pt-2 pb-1 flex items-center justify-between bg-zinc-950">
+                        <button class="w-10 h-10 flex items-center justify-center text-zinc-400 hover:text-zinc-200 transition-colors">
+                            <iconify-icon icon="solar:alt-arrow-left-linear" class="text-2xl"></iconify-icon>
+                        </button>
+                        <span class="text-base font-medium text-zinc-100 tracking-tight">blog-api · main</span>
+                        <button class="w-10 h-10 flex items-center justify-center text-zinc-400 hover:text-zinc-200 transition-colors">
+                            <iconify-icon icon="solar:menu-dots-linear" class="text-xl"></iconify-icon>
+                        </button>
+                    </div>
+
+                    <!-- Connection Badge -->
+                    <div class="flex justify-center pb-2 bg-zinc-950">
+                        <div class="flex items-center gap-2 bg-zinc-900 border border-white/5 rounded-full px-2.5 py-1">
+                            <div class="w-1.5 h-1.5 rounded-full bg-teal-400"></div>
+                            <span class="font-mono text-xs text-zinc-400">vps-hz</span>
+                        </div>
+                    </div>
+
+                    <!-- Main Empty State -->
+                    <div class="flex-1 flex flex-col items-center justify-center px-8 text-center gap-3">
+                        <span class="font-mono text-xs font-medium tracking-widest text-zinc-500 uppercase">Nothing running</span>
+                        <h3 class="text-lg font-medium text-zinc-100 tracking-tight">Start an agent or run a command</h3>
+                        <p class="text-sm text-zinc-400 leading-relaxed max-w-[240px]">
+                            The tmux session stays alive — recents below are kept warm.
+                        </p>
+                    </div>
+
+                    <!-- Recents -->
+                    <div class="px-5 pb-3">
+                        <span class="font-mono text-xs font-medium tracking-wider text-zinc-500 uppercase mb-3 block">Recents</span>
+                        <button class="w-full flex items-center justify-between bg-[#0a0a0a] border border-white/10 rounded-2xl p-4 hover:bg-zinc-900 transition-colors">
+                            <span class="font-mono text-sm text-zinc-200" style="font-family: 'JetBrains Mono', monospace;">$ npm run start:dev</span>
+                            <iconify-icon icon="solar:play-linear" class="text-teal-400 text-lg"></iconify-icon>
+                        </button>
+                    </div>
+
+                    <!-- Start Button -->
+                    <div class="px-5 pb-10">
+                        <button class="w-full py-3.5 bg-teal-400 text-teal-950 rounded-2xl text-sm font-semibold shadow-sm hover:bg-teal-300 transition-colors">
+                            Start an agent
+                        </button>
+                    </div>
+
+                    <!-- Home Indicator -->
+                    <div class="absolute bottom-1.5 left-1/2 -translate-x-1/2 w-32 h-1 bg-white/20 rounded-full z-30 pointer-events-none"></div>
+                </div>
+
+                <p class="font-mono text-xs text-zinc-500 max-w-[360px] leading-relaxed">
+                    RULES §8 · idle session stays in the inbox, muted, with written state — recents (and later, runbooks) stay warm rather than vanishing.
+                </p>
+            </div>
+        </section>
+
+        <!-- SECTION 01: Disconnect / Reconnect -->
+        <section>
+            <div class="flex items-center gap-3 mb-2">
+                <span class="font-mono text-xs font-medium text-teal-950 bg-teal-400 px-2.5 py-1 rounded">01</span>
+                <h2 class="text-xl font-medium text-zinc-100 tracking-tight">Disconnect, then caught up</h2>
+            </div>
+            <p class="text-sm text-zinc-500 mb-10 max-w-2xl leading-relaxed">
+                The phone lost sight of the machine — tmux never stopped. Input queues instead of failing; reconnect shows the delta, explicitly, rather than just quietly resuming.
+            </p>
+
+            <div class="flex flex-wrap items-start gap-12 lg:gap-16">
+                
+                <!-- Disconnect Frame -->
+                <div class="flex flex-col gap-4">
+                    <span class="font-mono text-xs font-medium tracking-wider text-zinc-500 uppercase">Mid-session drop</span>
+                    
+                    <div class="w-[360px] h-[780px] bg-zinc-950 border-[6px] border-zinc-900 rounded-[3rem] overflow-hidden flex flex-col shadow-2xl relative shrink-0">
+                        <!-- Status Bar -->
+                        <div class="h-12 flex justify-between items-center px-6 pt-3 pb-1 text-xs font-medium text-zinc-500 z-10 bg-zinc-950">
+                            <span>9:41</span>
+                            <div class="w-28 h-6 bg-black rounded-full absolute left-1/2 -translate-x-1/2 top-2"></div>
+                            <div class="flex gap-1.5 items-center">
+                                <iconify-icon icon="solar:cellular-linear"></iconify-icon>
+                                <iconify-icon icon="solar:wi-fi-linear" class="opacity-30"></iconify-icon>
+                                <iconify-icon icon="solar:battery-charge-linear"></iconify-icon>
+                            </div>
+                        </div>
+
+                        <!-- Drop Banner -->
+                        <div class="mx-3 mt-1 mb-2 p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl flex items-start gap-3">
+                            <iconify-icon icon="solar:refresh-linear" class="text-amber-500 animate-spin text-base shrink-0 mt-0.5"></iconify-icon>
+                            <span class="text-xs text-zinc-300 leading-relaxed">
+                                <strong class="font-medium text-amber-500">Connection lost</strong> · retrying in 3s — everything keeps running on mac-mini
+                            </span>
+                        </div>
+
+                        <!-- Top Nav -->
+                        <div class="px-3 py-1 flex items-center justify-between">
+                            <button class="w-10 h-10 flex items-center justify-center text-zinc-400">
+                                <iconify-icon icon="solar:alt-arrow-left-linear" class="text-2xl"></iconify-icon>
+                            </button>
+                            <span class="text-base font-medium text-zinc-100 tracking-tight">kendal-crm · feat/auth</span>
+                            <div class="w-10"></div>
+                        </div>
+
+                        <!-- As of Timestamp -->
+                        <div class="flex justify-center pb-2">
+                            <span class="font-mono text-xs text-zinc-500">as of 14:31</span>
+                        </div>
+
+                        <!-- Muted Child Strip -->
+                        <div class="flex gap-2 px-5 py-2 opacity-50">
+                            <span class="text-xs font-medium text-zinc-300 bg-zinc-800 border border-white/10 px-3 py-1 rounded-full flex items-center gap-1.5">
+                                claude <span class="text-xs">●</span>
+                            </span>
+                            <span class="text-xs font-medium text-zinc-400 bg-zinc-900 border border-white/5 px-3 py-1 rounded-full flex items-center gap-1.5">
+                                cmd <span class="text-red-400">✕</span>
+                            </span>
+                        </div>
+
+                        <!-- Muted Terminal -->
+                        <div class="flex-1 mx-3 mb-2 mt-1 bg-[#0a0a0a] border border-white/10 rounded-2xl p-4 opacity-60">
+                            <div class="font-mono text-sm leading-relaxed text-zinc-200" style="font-family: 'JetBrains Mono', monospace;">
+                                Running the full test suite now…
+                            </div>
+                            <div class="flex items-center gap-2 mt-4 font-mono text-xs text-zinc-500">
+                                <span class="text-teal-500">▸</span> npm test <span class="text-zinc-600">(frozen at 14:31)</span>
+                            </div>
+                        </div>
+
+                        <!-- Queued Message -->
+                        <div class="px-4 pb-3 flex flex-col items-end gap-1.5">
+                            <div class="bg-zinc-800 border border-white/10 rounded-2xl rounded-tr-sm px-4 py-2.5 max-w-[80%] opacity-70 text-sm text-zinc-200">
+                                Also update the README
+                            </div>
+                            <span class="font-mono text-xs text-amber-500/80 mr-1">queued — will send on reconnect</span>
+                        </div>
+
+                        <!-- Composer -->
+                        <div class="px-4 pb-8 shrink-0">
+                            <div class="flex items-center gap-3 bg-zinc-900 border border-white/10 rounded-full p-1.5 pl-4">
+                                <span class="flex-1 text-sm text-zinc-500">Message Claude…</span>
+                                <div class="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center text-zinc-500">
+                                    <iconify-icon icon="solar:arrow-up-linear" class="text-base"></iconify-icon>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="absolute bottom-1.5 left-1/2 -translate-x-1/2 w-32 h-1 bg-white/20 rounded-full z-30 pointer-events-none"></div>
+                    </div>
+                    <p class="font-mono text-xs text-zinc-500 max-w-[360px] leading-relaxed mt-2">
+                        PRD §17 #12 · frozen "as of" timestamp, not an error page — nothing here says the session died, because it didn't.
+                    </p>
+                </div>
+
+                <!-- Reconnect Frame -->
+                <div class="flex flex-col gap-4">
+                    <span class="font-mono text-xs font-medium tracking-wider text-zinc-500 uppercase">Caught up</span>
+                    
+                    <div class="w-[360px] h-[780px] bg-zinc-950 border-[6px] border-zinc-900 rounded-[3rem] overflow-hidden flex flex-col shadow-2xl relative shrink-0">
+                        <div class="h-12 flex justify-between items-center px-6 pt-3 pb-1 text-xs font-medium text-zinc-500 z-10 bg-zinc-950">
+                            <span>9:41</span>
+                            <div class="w-28 h-6 bg-black rounded-full absolute left-1/2 -translate-x-1/2 top-2"></div>
+                            <div class="flex gap-1.5 items-center">
+                                <iconify-icon icon="solar:cellular-linear"></iconify-icon>
+                                <iconify-icon icon="solar:wi-fi-linear"></iconify-icon>
+                                <iconify-icon icon="solar:battery-charge-linear"></iconify-icon>
+                            </div>
+                        </div>
+
+                        <!-- Success Banner -->
+                        <div class="mx-3 mt-1 mb-2 p-3 bg-teal-500/10 border border-teal-500/20 rounded-xl flex items-start gap-3">
+                            <iconify-icon icon="solar:check-circle-linear" class="text-teal-400 text-base shrink-0 mt-0.5"></iconify-icon>
+                            <span class="text-xs text-zinc-300 leading-relaxed">
+                                <strong class="font-medium text-teal-400">Reconnected</strong> · session was alive the whole time — 3 events while offline
+                            </span>
+                        </div>
+
+                        <div class="px-3 py-1 flex items-center justify-between">
+                            <button class="w-10 h-10 flex items-center justify-center text-zinc-400">
+                                <iconify-icon icon="solar:alt-arrow-left-linear" class="text-2xl"></iconify-icon>
+                            </button>
+                            <span class="text-base font-medium text-zinc-100 tracking-tight">kendal-crm · feat/auth</span>
+                            <div class="w-10"></div>
+                        </div>
+
+                        <div class="flex justify-center pb-2">
+                            <div class="flex items-center gap-2 bg-zinc-900 border border-white/5 rounded-full px-2.5 py-1">
+                                <div class="w-1.5 h-1.5 rounded-full bg-teal-400"></div>
+                                <span class="font-mono text-xs text-zinc-400">mac-mini</span>
+                            </div>
+                        </div>
+
+                        <div class="flex gap-2 px-5 py-2">
+                            <span class="text-xs font-medium text-teal-950 bg-teal-400 px-3 py-1 rounded-full flex items-center gap-1.5 shadow-sm">
+                                claude <span class="text-xs">●</span>
+                            </span>
+                            <span class="text-xs font-medium text-red-500 bg-red-500/10 border border-red-500/30 px-3 py-1 rounded-full flex items-center gap-1.5">
+                                cmd <span class="text-xs">✕</span>
+                            </span>
+                        </div>
+
+                        <div class="flex-1 mx-3 mb-2 mt-1 bg-[#0a0a0a] border border-white/10 rounded-2xl p-4 flex flex-col gap-4">
+                            <!-- Offline Divider -->
+                            <div class="flex items-center gap-3 w-full my-1">
+                                <div class="flex-1 h-px bg-white/10"></div>
+                                <span class="font-mono text-[10px] font-medium tracking-wider text-zinc-500 uppercase whitespace-nowrap">Offline 14:31–14:36</span>
+                                <div class="flex-1 h-px bg-white/10"></div>
+                            </div>
+                            
+                            <div class="flex items-center gap-2 font-mono text-xs text-zinc-400" style="font-family: 'JetBrains Mono', monospace;">
+                                <span class="text-teal-500">▸</span> npm test — passed 212/212 <span class="text-zinc-600">(collapsed)</span>
+                            </div>
+
+                            <div class="mt-auto flex flex-col items-end gap-1.5">
+                                <div class="bg-zinc-800 border border-white/5 rounded-2xl rounded-tr-sm px-4 py-2.5 max-w-[80%] text-sm text-zinc-200">
+                                    Also update the README
+                                </div>
+                                <span class="font-mono text-xs text-teal-400 mr-1">✓ sent 14:36</span>
+                            </div>
+                        </div>
+
+                        <div class="px-5 pb-2 text-center">
+                            <p class="text-xs text-zinc-500 leading-relaxed">
+                                Unread marks synced from the server — same on any phone you pick up.
+                            </p>
+                        </div>
+
+                        <div class="px-4 pb-8 shrink-0">
+                            <div class="flex items-center gap-3 bg-zinc-900 border border-white/10 rounded-full p-1.5 pl-4">
+                                <span class="flex-1 text-sm text-zinc-500">Message Claude…</span>
+                                <div class="w-8 h-8 rounded-full bg-teal-400 flex items-center justify-center text-teal-950 shadow-sm">
+                                    <iconify-icon icon="solar:arrow-up-linear" class="text-base"></iconify-icon>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="absolute bottom-1.5 left-1/2 -translate-x-1/2 w-32 h-1 bg-white/20 rounded-full z-30 pointer-events-none"></div>
+                    </div>
+                    <p class="font-mono text-xs text-zinc-500 max-w-[360px] leading-relaxed mt-2">
+                        RULES §8 · read state is server-side, so it syncs on reconnect rather than clearing optimistically — the offline divider makes the gap, and that nothing in it was lost, explicit.
+                    </p>
+                </div>
+
+            </div>
+        </section>
+
+        <!-- SECTION 02: Closing Friction -->
+        <section>
+            <div class="flex items-center gap-3 mb-2">
+                <span class="font-mono text-xs font-medium text-teal-950 bg-teal-400 px-2.5 py-1 rounded">02</span>
+                <h2 class="text-xl font-medium text-zinc-100 tracking-tight">Closing a session vs. closing a child</h2>
+            </div>
+            <p class="text-sm text-zinc-500 mb-10 max-w-2xl leading-relaxed">
+                Same verb, two very different weights. One kills a machine's tmux session; the other just stops showing a finished view. The friction is deliberately asymmetric.
+            </p>
+
+            <div class="flex flex-wrap items-start gap-12 lg:gap-16">
+                
+                <!-- Close Session Frame -->
+                <div class="flex flex-col gap-4">
+                    <span class="font-mono text-xs font-medium tracking-wider text-zinc-500 uppercase">Close Session · Heaviest Friction</span>
+                    
+                    <div class="w-[360px] h-[780px] bg-zinc-950 border-[6px] border-zinc-900 rounded-[3rem] overflow-hidden flex flex-col shadow-2xl relative shrink-0">
+                        <!-- Muted Background State -->
+                        <div class="absolute inset-0 opacity-30 pt-14 px-5">
+                            <span class="text-lg font-medium text-zinc-100 tracking-tight">kendal-crm · main</span>
+                        </div>
+                        
+                        <!-- Dimmer -->
+                        <div class="absolute inset-0 bg-black/60 z-10 backdrop-blur-[2px]"></div>
+
+                        <!-- Bottom Sheet -->
+                        <div class="absolute bottom-0 inset-x-0 bg-[#0f0f11] border-t-2 border-red-500/50 rounded-t-[2rem] pt-5 px-5 pb-10 z-20 shadow-[0_-20px_60px_rgba(0,0,0,0.6)]">
+                            <div class="w-10 h-1 bg-zinc-700 rounded-full mx-auto mb-6"></div>
+                            
+                            <h3 class="text-lg font-medium text-zinc-100 tracking-tight mb-2">Close session kendal-crm · main?</h3>
+                            <p class="text-sm text-zinc-400 leading-relaxed mb-5">
+                                Kills the tmux session on mac-mini-home. Scrollback is gone. Recents are kept with the project.
+                            </p>
+
+                            <!-- Data Box -->
+                            <div class="bg-zinc-950 border border-white/10 rounded-xl p-3.5 mb-5">
+                                <span class="font-mono text-[10px] font-medium tracking-wider text-zinc-500 uppercase block mb-1.5">Running Children</span>
+                                <span class="font-mono text-sm text-zinc-500">none</span>
+                            </div>
+
+                            <div class="flex flex-col gap-3">
+                                <button class="w-full py-3.5 bg-red-500 text-white rounded-xl text-sm font-medium shadow-[0_0_20px_rgba(239,68,68,0.2)]">
+                                    Hold to close session
+                                </button>
+                                <button class="w-full py-3.5 bg-zinc-900 border border-white/5 text-zinc-200 rounded-xl text-sm font-medium hover:bg-zinc-800 transition-colors">
+                                    Cancel
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="absolute bottom-1.5 left-1/2 -translate-x-1/2 w-32 h-1 bg-white/20 rounded-full z-30 pointer-events-none"></div>
+                    </div>
+                    <p class="font-mono text-xs text-zinc-500 max-w-[360px] leading-relaxed mt-2">
+                        RULES §8 · the only truly destructive act in the app — states plainly what's lost (scrollback) and what isn't (recents).
+                    </p>
+                </div>
+
+                <!-- Close Child Frame -->
+                <div class="flex flex-col gap-4">
+                    <span class="font-mono text-xs font-medium tracking-wider text-zinc-500 uppercase">Close Child · Cheap</span>
+                    
+                    <div class="w-[360px] h-[780px] bg-zinc-950 border-[6px] border-zinc-900 rounded-[3rem] overflow-hidden flex flex-col shadow-2xl relative shrink-0">
+                        <div class="h-12 flex justify-between items-center px-6 pt-3 pb-1 text-xs font-medium text-zinc-500 z-10 bg-zinc-950">
+                            <span>9:41</span>
+                            <div class="w-28 h-6 bg-black rounded-full absolute left-1/2 -translate-x-1/2 top-2"></div>
+                            <div class="flex gap-1.5 items-center">
+                                <iconify-icon icon="solar:cellular-linear"></iconify-icon>
+                                <iconify-icon icon="solar:wi-fi-linear"></iconify-icon>
+                                <iconify-icon icon="solar:battery-charge-linear"></iconify-icon>
+                            </div>
+                        </div>
+
+                        <div class="px-3 pt-2 pb-1 flex items-center justify-between">
+                            <button class="w-10 h-10 flex items-center justify-center text-zinc-400">
+                                <iconify-icon icon="solar:alt-arrow-left-linear" class="text-2xl"></iconify-icon>
+                            </button>
+                            <span class="text-base font-medium text-zinc-100 tracking-tight">kendal-crm · main</span>
+                            <button class="w-10 h-10 flex items-center justify-center text-zinc-400">
+                                <iconify-icon icon="solar:add-linear" class="text-xl"></iconify-icon>
+                            </button>
+                        </div>
+
+                        <div class="flex gap-2 px-5 py-2">
+                            <span class="text-xs font-medium text-zinc-300 bg-zinc-800 border border-white/10 px-3 py-1 rounded-full flex items-center gap-1.5">
+                                claude <span class="text-teal-400">✓</span>
+                            </span>
+                        </div>
+
+                        <div class="flex-1 mx-3 mb-2 mt-1 bg-[#0a0a0a] border border-white/10 rounded-2xl p-4">
+                            <div class="font-mono text-sm leading-relaxed text-zinc-200" style="font-family: 'JetBrains Mono', monospace;">
+                                Done — auth tests green. 9 files changed, summary below.
+                            </div>
+                            <div class="flex items-center gap-2 mt-4 font-mono text-xs text-zinc-400">
+                                <span class="text-teal-500">▸</span> diff summary <span class="text-zinc-600">(collapsed · 9 files)</span>
+                            </div>
+                        </div>
+
+                        <div class="px-5 pb-1 pt-2 text-center">
+                            <p class="text-[11px] text-zinc-500 leading-relaxed">
+                                Opening this child cleared the unread mark (synced server-side).
+                            </p>
+                        </div>
+
+                        <div class="px-5 pb-5 pt-2 text-center">
+                            <button class="text-sm font-medium text-red-500 hover:text-red-400 transition-colors">
+                                ✕ Close this child
+                            </button>
+                        </div>
+
+                        <div class="px-4 pb-8 shrink-0">
+                            <div class="flex items-center gap-3 bg-zinc-900 border border-white/10 rounded-full p-1.5 pl-4">
+                                <span class="flex-1 text-sm text-zinc-500">Follow up…</span>
+                                <div class="w-8 h-8 rounded-full bg-zinc-800 border border-white/5 flex items-center justify-center text-zinc-400">
+                                    <iconify-icon icon="solar:arrow-up-linear" class="text-base"></iconify-icon>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="absolute bottom-1.5 left-1/2 -translate-x-1/2 w-32 h-1 bg-white/20 rounded-full z-30 pointer-events-none"></div>
+                    </div>
+                    <p class="font-mono text-xs text-zinc-500 max-w-[360px] leading-relaxed mt-2">
+                        RULES §3, §8 · viewing marks it seen; closing this one finished child is a single tap — nothing on the machine is touched.
+                    </p>
+                </div>
+
+            </div>
+        </section>
+
+        <!-- Footer Note -->
+        <div class="pt-8 pb-12 text-center">
+            <span class="font-mono text-xs text-zinc-500">
+                All seven rounds now share one system: mono for real infra, sans for app chrome, worded badges throughout.
+            </span>
+        </div>
+
+    </main>
+
+</body></html>

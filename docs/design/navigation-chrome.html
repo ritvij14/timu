@@ -1,0 +1,687 @@
+<!DOCTYPE html>
+<html lang="en"><head><script id="aura-preview-performance-controller">
+(function() {
+if (window.__auraPreviewPerformanceController) return;
+const nativeRequestAnimationFrame = window.requestAnimationFrame
+? window.requestAnimationFrame.bind(window)
+: function(callback) { return window.setTimeout(function() { callback(Date.now()); }, 16); };
+const nativeCancelAnimationFrame = window.cancelAnimationFrame
+? window.cancelAnimationFrame.bind(window)
+: window.clearTimeout.bind(window);
+const nativeSetInterval = window.setInterval.bind(window);
+let paused = false;
+let nextFrameId = 1;
+const frameRecords = new Map();
+const pausedFrameCallbacks = new Map();
+const style = document.createElement('style');
+style.id = 'aura-preview-performance-style';
+style.textContent = [
+'html[data-aura-preview-paused="true"] *,',
+'html[data-aura-preview-paused="true"] *::before,',
+'html[data-aura-preview-paused="true"] *::after {',
+'  animation-play-state: paused !important;',
+'  transition-duration: 0s !important;',
+'  scroll-behavior: auto !important;',
+'}'
+].join('\n');
+document.head.appendChild(style);
+window.requestAnimationFrame = function(callback) {
+const frameId = nextFrameId++;
+if (paused) {
+pausedFrameCallbacks.set(frameId, callback);
+frameRecords.set(frameId, { paused: true });
+return frameId;
+}
+const nativeFrameId = nativeRequestAnimationFrame(function(timestamp) {
+frameRecords.delete(frameId);
+callback(timestamp);
+});
+frameRecords.set(frameId, { nativeFrameId: nativeFrameId });
+return frameId;
+};
+window.cancelAnimationFrame = function(frameId) {
+const record = frameRecords.get(frameId);
+pausedFrameCallbacks.delete(frameId);
+if (record && typeof record.nativeFrameId !== 'undefined') {
+nativeCancelAnimationFrame(record.nativeFrameId);
+}
+frameRecords.delete(frameId);
+};
+window.setInterval = function(callback, delay) {
+const args = Array.prototype.slice.call(arguments, 2);
+return nativeSetInterval(function() {
+if (paused) return;
+callback.apply(this, args);
+}, delay);
+};
+const flushPausedFrames = function() {
+const callbacks = Array.from(pausedFrameCallbacks.entries());
+pausedFrameCallbacks.clear();
+callbacks.forEach(function(entry) {
+const frameId = entry[0];
+const callback = entry[1];
+const nativeFrameId = nativeRequestAnimationFrame(function(timestamp) {
+frameRecords.delete(frameId);
+callback(timestamp);
+});
+frameRecords.set(frameId, { nativeFrameId: nativeFrameId });
+});
+};
+const setPaused = function(nextPaused) {
+const shouldPause = Boolean(nextPaused);
+if (paused === shouldPause) return;
+paused = shouldPause;
+document.documentElement.toggleAttribute('data-aura-preview-paused', paused);
+if (!paused) {
+flushPausedFrames();
+}
+};
+window.__auraPreviewPerformanceController = {
+setPaused: setPaused,
+get paused() {
+return paused;
+}
+};
+window.addEventListener('message', function(event) {
+if (event.source !== window.parent) return;
+if (!event.data || event.data.type !== 'aura-preview-performance-mode') return;
+setPaused(event.data.paused);
+});
+})();
+</script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Navigation Chrome</title>
+<!-- Fonts -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<!-- Tailwind -->
+<script src="https://cdn.tailwindcss.com"></script>
+<!-- Iconify -->
+<script src="https://code.iconify.design/iconify-icon/1.0.7/iconify-icon.min.js"></script>
+<style>
+.no-scrollbar::-webkit-scrollbar {
+display: none;
+}
+.no-scrollbar {
+-ms-overflow-style: none;
+scrollbar-width: none;
+}
+iconify-icon {
+--iconify-stroke-width: 1.5;
+}
+.carousel-page {
+will-change: transform, opacity;
+}
+</style></head>
+<body class="bg-[#09090b] text-zinc-100 antialiased min-h-screen pb-32" style="font-family: 'Inter', sans-serif;">
+
+    <!-- Top Documentation Header -->
+    <header class="max-w-7xl mx-auto px-6 py-16 lg:px-12">
+        <div class="inline-flex items-center gap-3 mb-6 flex-wrap">
+            <span class="font-mono text-xs font-medium tracking-wider text-teal-950 bg-teal-400 px-3 py-1.5 rounded-md uppercase shadow-sm">
+                Round 6 · Navigation Chrome
+            </span>
+            <span class="font-mono text-xs text-zinc-500">
+                PRODUCT-RULES.md §3, §5
+            </span>
+        </div>
+        <h1 class="text-4xl font-semibold text-zinc-100 tracking-tight mb-4">
+            Navigation chrome
+        </h1>
+        <p class="text-sm text-zinc-400 max-w-2xl leading-relaxed">
+            The child strip and swipe carousel use <strong class="text-zinc-200 font-medium">stable spatial order</strong> — deliberately different from the inbox's urgency order. The carousel below is live: drag it with your mouse or finger.
+        </p>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-6 lg:px-12 flex flex-col gap-24">
+        
+        <!-- SECTION 00: Child Strip Component -->
+        <section>
+            <div class="flex items-center gap-3 mb-2">
+                <span class="font-mono text-xs font-medium text-teal-950 bg-teal-400 px-2.5 py-1 rounded">00</span>
+                <h2 class="text-xl font-medium text-zinc-100 tracking-tight">Child strip — mini-tabs, not icon dots</h2>
+            </div>
+            <p class="text-sm text-zinc-500 mb-10 max-w-2xl leading-relaxed">
+                Name + status per child, nothing to memorize. Icon-only dots fail "recognition over recall" — identical glyphs are indistinguishable without memorizing position.
+            </p>
+
+            <div class="flex flex-col gap-3.5 max-w-md">
+                <!-- Claude Running -->
+                <div class="flex items-center gap-4">
+                    <div class="flex gap-2 bg-zinc-900 border border-white/10 rounded-2xl p-3 flex-1">
+                        <span class="text-xs font-medium text-teal-950 bg-teal-400 px-3 py-1 rounded-full flex items-center gap-1.5 shadow-sm">
+                            claude <span class="text-xs">●</span>
+                        </span>
+                    </div>
+                    <span class="font-mono text-xs text-zinc-500 w-40">agent, running fine</span>
+                </div>
+                
+                <!-- Claude Needs Input -->
+                <div class="flex items-center gap-4">
+                    <div class="flex gap-2 bg-zinc-900 border border-white/10 rounded-2xl p-3 flex-1">
+                        <span class="text-xs font-medium text-amber-500 bg-amber-500/10 border border-amber-500/30 px-3 py-1 rounded-full flex items-center gap-1.5">
+                            claude <span class="text-xs">◐</span>
+                        </span>
+                    </div>
+                    <span class="font-mono text-xs text-zinc-500 w-40">agent, needs input</span>
+                </div>
+
+                <!-- Cmd Failed -->
+                <div class="flex items-center gap-4">
+                    <div class="flex gap-2 bg-zinc-900 border border-white/10 rounded-2xl p-3 flex-1">
+                        <span class="text-xs font-medium text-red-500 bg-red-500/10 border border-red-500/30 px-3 py-1 rounded-full flex items-center gap-1.5">
+                            cmd <span class="text-xs">✕</span>
+                        </span>
+                    </div>
+                    <span class="font-mono text-xs text-zinc-500 w-40">command window, a block failed</span>
+                </div>
+
+                <!-- TTY Unknown -->
+                <div class="flex items-center gap-4">
+                    <div class="flex gap-2 bg-zinc-900 border border-white/10 rounded-2xl p-3 flex-1">
+                        <span class="text-xs font-medium text-zinc-400 bg-zinc-800 border border-white/10 px-3 py-1 rounded-full flex items-center gap-1.5">
+                            tty <span class="text-xs">?</span>
+                        </span>
+                    </div>
+                    <span class="font-mono text-xs text-zinc-500 w-40">foreign terminal, unknown status</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- SECTION 01: Interactive Carousel -->
+        <section>
+            <div class="flex items-center gap-3 mb-2">
+                <span class="font-mono text-xs font-medium text-teal-950 bg-teal-400 px-2.5 py-1 rounded">01</span>
+                <h2 class="text-xl font-medium text-zinc-100 tracking-tight">Swipe carousel — try it</h2>
+            </div>
+            <p class="text-sm text-zinc-500 mb-10 max-w-2xl leading-relaxed">
+                Drag anywhere in the panel below. It tracks your finger 1:1, resists slightly past the edges, and settles with a spring — never a linear snap. Order is fixed (claude · cmd · tty) regardless of which one is most urgent.
+            </p>
+
+            <div class="flex flex-col items-start gap-5">
+                
+                <!-- Interactive Phone Frame -->
+                <div class="w-[360px] h-[780px] bg-zinc-950 border-[6px] border-zinc-900 rounded-[3rem] overflow-hidden flex flex-col shadow-2xl relative shrink-0">
+                    <!-- Status Bar -->
+                    <div class="h-12 flex justify-between items-center px-6 pt-3 pb-1 text-xs font-medium text-zinc-500 z-10 bg-zinc-950">
+                        <span>9:41</span>
+                        <div class="w-28 h-6 bg-black rounded-full absolute left-1/2 -translate-x-1/2 top-2"></div>
+                        <div class="flex gap-1.5 items-center">
+                            <iconify-icon icon="solar:cellular-linear"></iconify-icon>
+                            <iconify-icon icon="solar:wi-fi-linear"></iconify-icon>
+                            <iconify-icon icon="solar:battery-charge-linear"></iconify-icon>
+                        </div>
+                    </div>
+
+                    <!-- Top Nav -->
+                    <div class="px-3 pt-2 pb-1 flex items-center justify-between bg-zinc-950">
+                        <button class="w-10 h-10 flex items-center justify-center text-zinc-400 hover:text-zinc-200 transition-colors">
+                            <iconify-icon icon="solar:alt-arrow-left-linear" class="text-2xl"></iconify-icon>
+                        </button>
+                        <span class="text-base font-medium text-zinc-100 tracking-tight">kendal-crm · feat/auth</span>
+                        <button class="w-10 h-10 flex items-center justify-center text-zinc-400 hover:text-zinc-200 transition-colors">
+                            <iconify-icon icon="solar:add-linear" class="text-xl"></iconify-icon>
+                        </button>
+                    </div>
+
+                    <!-- Child Strip Tabs (Clickable) -->
+                    <div class="flex gap-2 px-5 py-2.5 bg-zinc-950 z-10 overflow-x-auto no-scrollbar">
+                        <!-- Tab 0 -->
+                        <button id="tab0" class="text-xs font-medium text-amber-500 bg-amber-500/10 border border-amber-500/30 px-3 py-1 rounded-full flex items-center gap-1.5 whitespace-nowrap transition-all duration-300">
+                            claude <span class="text-xs">◐</span>
+                        </button>
+                        <!-- Tab 1 -->
+                        <button id="tab1" class="text-xs font-medium text-zinc-400 bg-zinc-900 border border-white/5 px-3 py-1 rounded-full flex items-center gap-1.5 whitespace-nowrap transition-all duration-300">
+                            cmd <span class="text-red-500">✕</span>
+                        </button>
+                        <!-- Tab 2 -->
+                        <button id="tab2" class="text-xs font-medium text-zinc-500 bg-zinc-900 border border-white/5 px-3 py-1 rounded-full flex items-center gap-1.5 whitespace-nowrap transition-all duration-300">
+                            tty <span class="text-xs">?</span>
+                        </button>
+                    </div>
+
+                    <!-- Swipe Container -->
+                    <div id="carousel-container" class="flex-1 relative overflow-hidden mx-3 mb-2 rounded-2xl touch-pan-y select-none cursor-grab active:cursor-grabbing">
+                        
+                        <!-- Page 0: Claude (Approval) -->
+                        <div id="page0" class="carousel-page absolute inset-0 bg-[#0a0a0a] border border-white/10 rounded-2xl p-4 flex flex-col">
+                            <div class="font-mono text-xs font-semibold tracking-wider text-amber-500 mb-4 uppercase">Approval · 1m</div>
+                            <div class="font-mono text-sm leading-relaxed text-zinc-200 mb-5" style="font-family: 'JetBrains Mono', monospace;">
+                                $ prisma migrate reset --force
+                            </div>
+                            <div class="flex gap-2.5 mt-auto">
+                                <button class="flex-1 py-3 bg-zinc-800 rounded-xl text-sm font-medium text-zinc-300">Deny</button>
+                                <button class="flex-1 py-3 bg-teal-400 rounded-xl text-sm font-semibold text-teal-950 shadow-sm">Approve</button>
+                            </div>
+                        </div>
+
+                        <!-- Page 1: Cmd (Failed) -->
+                        <div id="page1" class="carousel-page absolute inset-0 bg-[#0a0a0a] border border-white/10 rounded-2xl p-4 flex flex-col opacity-65 translate-x-full">
+                            <div class="flex items-center justify-between mb-4">
+                                <span class="font-mono text-sm text-zinc-200" style="font-family: 'JetBrains Mono', monospace;">$ docker build .</span>
+                                <span class="font-mono text-xs font-semibold text-red-500">✕ exit 1</span>
+                            </div>
+                            <div class="font-mono text-xs leading-relaxed text-zinc-400" style="font-family: 'JetBrains Mono', monospace;">
+                                #12 ERROR: npm ci — ENOMEM <span class="text-zinc-600">(118 lines)</span>
+                            </div>
+                        </div>
+
+                        <!-- Page 2: TTY (Unknown) -->
+                        <div id="page2" class="carousel-page absolute inset-0 bg-[#0a0a0a] border border-white/10 rounded-2xl p-4 flex flex-col opacity-65 translate-x-[200%]">
+                            <div class="font-mono text-xs font-semibold tracking-wider text-zinc-600 mb-2 uppercase">Window 3 · Created outside this app</div>
+                            <div class="text-xs text-zinc-500 mb-4">status unknown</div>
+                            <div class="font-mono text-sm text-zinc-200 mb-3" style="font-family: 'JetBrains Mono', monospace;">$ htop</div>
+                            <div class="font-mono text-xs leading-relaxed text-zinc-500 mt-auto" style="font-family: 'JetBrains Mono', monospace;">
+                                (read-only mirror of a pane opened from the laptop — plain terminal view, still switchable)
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Bottom Dots -->
+                    <div class="flex justify-center gap-1.5 py-3 z-10 bg-zinc-950">
+                        <div id="dot0" class="h-1.5 w-4 rounded-full bg-teal-400 transition-all duration-300"></div>
+                        <div id="dot1" class="h-1.5 w-1.5 rounded-full bg-zinc-700 transition-all duration-300"></div>
+                        <div id="dot2" class="h-1.5 w-1.5 rounded-full bg-zinc-700 transition-all duration-300"></div>
+                    </div>
+
+                    <!-- Composer -->
+                    <div class="px-4 pb-8 shrink-0 bg-zinc-950 z-10">
+                        <div class="flex items-center gap-3 bg-zinc-900 border border-white/10 rounded-full p-1.5 pl-4">
+                            <span class="flex-1 text-sm text-zinc-500">Reply instead…</span>
+                            <button class="w-8 h-8 rounded-full bg-zinc-800 border border-white/5 flex items-center justify-center text-zinc-400 hover:text-zinc-200 transition-colors">
+                                <iconify-icon icon="solar:arrow-up-linear" class="text-base"></iconify-icon>
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- Home Indicator -->
+                    <div class="absolute bottom-1.5 left-1/2 -translate-x-1/2 w-32 h-1 bg-white/20 rounded-full z-30 pointer-events-none"></div>
+                </div>
+                
+                <p class="font-mono text-xs text-zinc-500 max-w-[360px] leading-relaxed">
+                    RULES §5 · spatial order (claude · cmd · tty) never re-sorts by urgency — that's the inbox's job, not the carousel's. Tap a strip tab to jump directly.
+                </p>
+            </div>
+        </section>
+
+        <!-- SECTION 02: Keyboard & Passive Contrast -->
+        <section>
+            <div class="flex items-center gap-3 mb-2">
+                <span class="font-mono text-xs font-medium text-teal-950 bg-teal-400 px-2.5 py-1 rounded">02</span>
+                <h2 class="text-xl font-medium text-zinc-100 tracking-tight">Strip survives the keyboard; passive events don't move you</h2>
+            </div>
+            <p class="text-sm text-zinc-500 mb-12 max-w-2xl leading-relaxed">
+                Two more constraints the chrome has to hold: the strip stays reachable with the keyboard open, and a passive (command) event may re-badge the strip without ever pulling the user away from what they're doing.
+            </p>
+
+            <div class="flex flex-wrap items-start gap-12 lg:gap-16">
+                
+                <!-- Frame: Keyboard Open -->
+                <div class="flex flex-col gap-4">
+                    <span class="font-mono text-xs font-semibold tracking-wider text-zinc-500 uppercase">Keyboard Open</span>
+                    
+                    <div class="w-[360px] h-[780px] bg-zinc-950 border-[6px] border-zinc-900 rounded-[3rem] overflow-hidden flex flex-col shadow-2xl relative shrink-0">
+                        <!-- Status Bar -->
+                        <div class="h-12 flex justify-between items-center px-6 pt-3 pb-1 text-xs font-medium text-zinc-500 z-10 bg-zinc-950">
+                            <span>9:41</span>
+                            <div class="w-28 h-6 bg-black rounded-full absolute left-1/2 -translate-x-1/2 top-2"></div>
+                            <div class="flex gap-1.5 items-center">
+                                <iconify-icon icon="solar:cellular-linear"></iconify-icon>
+                                <iconify-icon icon="solar:wi-fi-linear"></iconify-icon>
+                                <iconify-icon icon="solar:battery-charge-linear"></iconify-icon>
+                            </div>
+                        </div>
+
+                        <!-- Top Nav -->
+                        <div class="px-3 pt-2 pb-1 flex items-center justify-between">
+                            <button class="w-10 h-10 flex items-center justify-center text-zinc-400">
+                                <iconify-icon icon="solar:alt-arrow-left-linear" class="text-2xl"></iconify-icon>
+                            </button>
+                            <span class="text-base font-medium text-zinc-100 tracking-tight">kendal-crm · feat/auth</span>
+                            <div class="w-10 h-10"></div>
+                        </div>
+
+                        <!-- Child Strip -->
+                        <div class="flex gap-2 px-5 py-2 overflow-x-auto no-scrollbar">
+                            <span class="text-xs font-medium text-amber-500 bg-amber-500/10 border border-amber-500/30 px-3 py-1 rounded-full flex items-center gap-1.5 whitespace-nowrap">
+                                claude <span class="text-xs">◐</span>
+                            </span>
+                            <span class="text-xs font-medium text-zinc-400 bg-zinc-900 border border-white/5 px-3 py-1 rounded-full flex items-center gap-1.5 whitespace-nowrap">
+                                cmd <span class="text-red-500">✕</span>
+                            </span>
+                            <span class="text-xs font-medium text-zinc-500 bg-zinc-900 border border-white/5 px-3 py-1 rounded-full flex items-center gap-1.5 whitespace-nowrap">
+                                tty <span class="text-xs">?</span>
+                            </span>
+                        </div>
+
+                        <!-- Terminal Pane -->
+                        <div class="flex-1 mx-3 mb-2 bg-[#0a0a0a] border border-white/10 rounded-2xl p-4 overflow-hidden">
+                            <div class="font-mono text-sm leading-relaxed text-zinc-200" style="font-family: 'JetBrains Mono', monospace;">
+                                OK to change the session middleware? It touches login for all apps.
+                            </div>
+                        </div>
+
+                        <!-- Composer -->
+                        <div class="px-4 pb-3 shrink-0">
+                            <div class="flex items-center gap-3 bg-zinc-900 border border-teal-500/50 rounded-full p-1.5 pl-4 shadow-[0_0_12px_rgba(45,212,191,0.1)]">
+                                <span class="flex-1 text-sm text-zinc-100">Yes — keep the old cookie name</span>
+                                <button class="w-8 h-8 rounded-full bg-teal-400 flex items-center justify-center text-teal-950">
+                                    <iconify-icon icon="solar:arrow-up-linear" class="text-base"></iconify-icon>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Mock Software Keyboard -->
+                        <div class="h-[290px] w-full bg-zinc-800/80 backdrop-blur-xl border-t border-white/10 p-2 flex flex-col gap-2">
+                            <!-- Top row autocomplete -->
+                            <div class="flex gap-1 mb-1 px-1">
+                                <div class="flex-1 h-10 flex items-center justify-center text-zinc-300 text-sm">name</div>
+                                <div class="w-px h-6 bg-white/10 my-auto"></div>
+                                <div class="flex-1 h-10 flex items-center justify-center text-zinc-300 text-sm">value</div>
+                                <div class="w-px h-6 bg-white/10 my-auto"></div>
+                                <div class="flex-1 h-10 flex items-center justify-center text-zinc-300 text-sm">and</div>
+                            </div>
+                            <!-- Keys row 1 -->
+                            <div class="flex gap-1.5 px-1">
+                                <div class="flex-1 h-11 bg-zinc-700/80 rounded-lg shadow-sm"></div>
+                                <div class="flex-1 h-11 bg-zinc-700/80 rounded-lg shadow-sm"></div>
+                                <div class="flex-1 h-11 bg-zinc-700/80 rounded-lg shadow-sm"></div>
+                                <div class="flex-1 h-11 bg-zinc-700/80 rounded-lg shadow-sm"></div>
+                                <div class="flex-1 h-11 bg-zinc-700/80 rounded-lg shadow-sm"></div>
+                                <div class="flex-1 h-11 bg-zinc-700/80 rounded-lg shadow-sm"></div>
+                                <div class="flex-1 h-11 bg-zinc-700/80 rounded-lg shadow-sm"></div>
+                                <div class="flex-1 h-11 bg-zinc-700/80 rounded-lg shadow-sm"></div>
+                                <div class="flex-1 h-11 bg-zinc-700/80 rounded-lg shadow-sm"></div>
+                                <div class="flex-1 h-11 bg-zinc-700/80 rounded-lg shadow-sm"></div>
+                            </div>
+                            <!-- Keys row 2 -->
+                            <div class="flex gap-1.5 px-4">
+                                <div class="flex-1 h-11 bg-zinc-700/80 rounded-lg shadow-sm"></div>
+                                <div class="flex-1 h-11 bg-zinc-700/80 rounded-lg shadow-sm"></div>
+                                <div class="flex-1 h-11 bg-zinc-700/80 rounded-lg shadow-sm"></div>
+                                <div class="flex-1 h-11 bg-zinc-700/80 rounded-lg shadow-sm"></div>
+                                <div class="flex-1 h-11 bg-zinc-700/80 rounded-lg shadow-sm"></div>
+                                <div class="flex-1 h-11 bg-zinc-700/80 rounded-lg shadow-sm"></div>
+                                <div class="flex-1 h-11 bg-zinc-700/80 rounded-lg shadow-sm"></div>
+                                <div class="flex-1 h-11 bg-zinc-700/80 rounded-lg shadow-sm"></div>
+                                <div class="flex-1 h-11 bg-zinc-700/80 rounded-lg shadow-sm"></div>
+                            </div>
+                            <!-- Keys row 3 -->
+                            <div class="flex gap-1.5 px-1">
+                                <div class="w-11 h-11 bg-zinc-600/80 rounded-lg shadow-sm flex items-center justify-center">
+                                    <iconify-icon icon="solar:arrow-up-linear" class="text-zinc-300"></iconify-icon>
+                                </div>
+                                <div class="flex-1 h-11 bg-zinc-700/80 rounded-lg shadow-sm"></div>
+                                <div class="flex-1 h-11 bg-zinc-700/80 rounded-lg shadow-sm"></div>
+                                <div class="flex-1 h-11 bg-zinc-700/80 rounded-lg shadow-sm"></div>
+                                <div class="flex-1 h-11 bg-zinc-700/80 rounded-lg shadow-sm"></div>
+                                <div class="flex-1 h-11 bg-zinc-700/80 rounded-lg shadow-sm"></div>
+                                <div class="flex-1 h-11 bg-zinc-700/80 rounded-lg shadow-sm"></div>
+                                <div class="flex-1 h-11 bg-zinc-700/80 rounded-lg shadow-sm"></div>
+                                <div class="w-11 h-11 bg-zinc-600/80 rounded-lg shadow-sm flex items-center justify-center">
+                                    <iconify-icon icon="solar:backspace-linear" class="text-zinc-300"></iconify-icon>
+                                </div>
+                            </div>
+                            <!-- Keys row 4 -->
+                            <div class="flex gap-1.5 px-1">
+                                <div class="w-[25%] h-11 bg-zinc-600/80 rounded-lg shadow-sm flex items-center justify-center text-zinc-300 text-xs font-medium">123</div>
+                                <div class="flex-1 h-11 bg-zinc-700/80 rounded-lg shadow-sm"></div>
+                                <div class="w-[25%] h-11 bg-zinc-600/80 rounded-lg shadow-sm flex items-center justify-center text-zinc-300 text-xs font-medium">return</div>
+                            </div>
+                        </div>
+
+                        <!-- Home Indicator -->
+                        <div class="absolute bottom-1.5 left-1/2 -translate-x-1/2 w-32 h-1 bg-white/20 rounded-full z-30 pointer-events-none"></div>
+                    </div>
+                    <p class="font-mono text-xs text-zinc-500 max-w-[360px] leading-relaxed">
+                        RULES §5 · question, composer and strip all coexist above the software keyboard.
+                    </p>
+                </div>
+
+                <!-- Passive Re-badge Block -->
+                <div class="flex flex-col gap-4">
+                    <span class="font-mono text-xs font-semibold tracking-wider text-zinc-500 uppercase">Passive Re-Badge · Before / After</span>
+                    
+                    <div class="w-full max-w-[460px] flex flex-col gap-6">
+                        
+                        <!-- Before -->
+                        <div>
+                            <div class="font-mono text-xs text-zinc-500 mb-2 uppercase tracking-wider">Before — docker still building</div>
+                            <div class="bg-zinc-900 border border-white/10 rounded-xl p-4 flex items-center justify-between">
+                                <span class="text-sm font-medium text-zinc-100">kendal-crm · feat/auth</span>
+                                <div class="flex gap-1.5">
+                                    <span class="text-xs font-medium text-teal-950 bg-teal-400 px-2.5 py-1 rounded-full flex items-center gap-1 shadow-sm">
+                                        claude <span class="text-xs">●</span>
+                                    </span>
+                                    <span class="text-xs font-medium text-zinc-400 bg-zinc-800 border border-white/10 px-2.5 py-1 rounded-full flex items-center gap-1">
+                                        cmd <span class="text-xs">●</span>
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- After -->
+                        <div>
+                            <div class="font-mono text-xs text-zinc-500 mb-2 uppercase tracking-wider">After — docker exits ✕ · user not moved</div>
+                            <div class="bg-zinc-900 border border-white/10 rounded-xl p-4 flex items-center justify-between">
+                                <span class="text-sm font-medium text-zinc-100">kendal-crm · feat/auth</span>
+                                <div class="flex gap-1.5">
+                                    <span class="text-xs font-medium text-teal-950 bg-teal-400 px-2.5 py-1 rounded-full flex items-center gap-1 shadow-sm">
+                                        claude <span class="text-xs">●</span>
+                                    </span>
+                                    <span class="text-xs font-medium text-red-500 bg-red-500/10 border border-red-500/30 px-2.5 py-1 rounded-full flex items-center gap-1">
+                                        cmd <span class="text-xs">✕</span>
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Inbox -->
+                        <div class="mt-2">
+                            <div class="font-mono text-xs text-zinc-500 mb-2 uppercase tracking-wider">Meanwhile, in the inbox — re-sorted quietly</div>
+                            <div class="bg-zinc-900 border border-red-500/40 rounded-xl p-4 shadow-[0_4px_16px_rgba(239,68,68,0.05)]">
+                                <div class="flex items-center justify-between mb-1.5">
+                                    <span class="text-sm font-medium text-zinc-100">kendal-crm · feat/auth</span>
+                                    <span class="text-xs font-semibold text-red-500 bg-red-500/10 px-2.5 py-1 rounded-full flex items-center gap-1">
+                                        ✕ Failed
+                                    </span>
+                                </div>
+                                <div class="font-mono text-xs text-zinc-400">
+                                    cmd <span class="text-red-500">✕</span> exit 1, claude <span class="text-teal-400">●</span> working <span class="text-zinc-600">· now</span>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+                    
+                    <p class="font-mono text-xs text-zinc-500 max-w-[420px] leading-relaxed mt-2">
+                        RULES §3 · passive tier: re-badge, re-sort, flip the dot — never move the user, never push. Only the tab and the inbox row changed; the chat above never moved.
+                    </p>
+                </div>
+
+            </div>
+        </section>
+
+        <!-- Next Steps -->
+        <div class="pt-8 pb-12 text-center">
+            <span class="font-mono text-xs text-zinc-500 uppercase tracking-wider">Next: Round 7 — Lifecycle &amp; connection states.</span>
+        </div>
+
+    </main>
+
+    <!-- Carousel Logic -->
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const container = document.getElementById('carousel-container');
+            const pages = [
+                document.getElementById('page0'),
+                document.getElementById('page1'),
+                document.getElementById('page2')
+            ];
+            
+            // Tab elements
+            const tab0 = document.getElementById('tab0');
+            const tab1 = document.getElementById('tab1');
+            const tab2 = document.getElementById('tab2');
+            const tabs = [tab0, tab1, tab2];
+            
+            // Dot elements
+            const dot0 = document.getElementById('dot0');
+            const dot1 = document.getElementById('dot1');
+            const dot2 = document.getElementById('dot2');
+            const dots = [dot0, dot1, dot2];
+
+            let currentIndex = 0;
+            let isDragging = false;
+            let startX = 0;
+            let currentProgress = 0;
+            let containerWidth = 300;
+            let history = [];
+
+            // Helper to style tabs and dots based on active index
+            const updateIndicators = (idx) => {
+                // Tabs
+                tabs.forEach((tab, i) => {
+                    const isActive = (i === idx);
+                    if (i === 0) {
+                        // Amber theme for Claude tab
+                        tab.className = isActive 
+                            ? "text-xs font-medium text-amber-500 bg-amber-500/10 border border-amber-500/30 px-3 py-1 rounded-full flex items-center gap-1.5 whitespace-nowrap transition-all duration-300" 
+                            : "text-xs font-medium text-zinc-400 bg-zinc-900 border border-white/5 px-3 py-1 rounded-full flex items-center gap-1.5 whitespace-nowrap transition-all duration-300 hover:text-zinc-300";
+                        tab.innerHTML = `claude <span class="${isActive ? 'text-xs' : 'text-amber-500 text-xs'}">◐</span>`;
+                    } else if (i === 1) {
+                        // Red theme for Cmd tab
+                        tab.className = isActive 
+                            ? "text-xs font-medium text-red-500 bg-red-500/10 border border-red-500/30 px-3 py-1 rounded-full flex items-center gap-1.5 whitespace-nowrap transition-all duration-300" 
+                            : "text-xs font-medium text-zinc-400 bg-zinc-900 border border-white/5 px-3 py-1 rounded-full flex items-center gap-1.5 whitespace-nowrap transition-all duration-300 hover:text-zinc-300";
+                        tab.innerHTML = `cmd <span class="text-red-500 text-xs">✕</span>`;
+                    } else if (i === 2) {
+                        // Default theme for TTY tab
+                        tab.className = isActive 
+                            ? "text-xs font-medium text-zinc-200 bg-zinc-800 border border-white/10 px-3 py-1 rounded-full flex items-center gap-1.5 whitespace-nowrap transition-all duration-300" 
+                            : "text-xs font-medium text-zinc-500 bg-zinc-900 border border-white/5 px-3 py-1 rounded-full flex items-center gap-1.5 whitespace-nowrap transition-all duration-300 hover:text-zinc-400";
+                        tab.innerHTML = `tty <span class="text-xs">?</span>`;
+                    }
+                });
+
+                // Dots
+                dots.forEach((dot, i) => {
+                    dot.className = i === idx 
+                        ? "h-1.5 w-4 rounded-full bg-teal-400 transition-all duration-300"
+                        : "h-1.5 w-1.5 rounded-full bg-zinc-700 transition-all duration-300";
+                });
+            };
+
+            const applyTransforms = (progress, indexOverride) => {
+                const idx = indexOverride !== undefined ? indexOverride : currentIndex;
+                pages.forEach((el, i) => {
+                    const rel = i - idx;
+                    const pos = (rel + progress) * 100;
+                    const dist = Math.min(1, Math.abs(rel + progress));
+                    const scale = 1 - 0.05 * dist;
+                    const opacity = 1 - 0.35 * dist;
+                    
+                    el.style.transform = `translateX(${pos}%) scale(${scale})`;
+                    el.style.opacity = opacity.toString();
+                    el.style.zIndex = dist < 0.5 ? '2' : '1';
+                });
+            };
+
+            const clearTransition = () => {
+                pages.forEach(el => el.style.transition = 'none');
+            };
+
+            const setSpringTransition = () => {
+                pages.forEach(el => {
+                    el.style.transition = 'transform 0.55s cubic-bezier(0.22, 1.4, 0.36, 1), opacity 0.4s ease-out';
+                });
+            };
+
+            const onPointerDown = (e) => {
+                isDragging = true;
+                startX = e.clientX || (e.touches && e.touches[0].clientX);
+                currentProgress = 0;
+                history = [{ x: startX, t: Date.now() }];
+                
+                if (container) {
+                    const rect = container.getBoundingClientRect();
+                    containerWidth = rect.width || 300;
+                    try { container.setPointerCapture(e.pointerId); } catch(err) {}
+                }
+                clearTransition();
+            };
+
+            const onPointerMove = (e) => {
+                if (!isDragging) return;
+                const clientX = e.clientX || (e.touches && e.touches[0].clientX);
+                const dx = clientX - startX;
+                let progress = dx / containerWidth;
+                
+                // Spring resistance on edges
+                if (currentIndex <= 0 && progress > 0) progress *= 0.35;
+                if (currentIndex >= 2 && progress < 0) progress *= 0.35;
+                
+                currentProgress = progress;
+                history.push({ x: clientX, t: Date.now() });
+                if (history.length > 6) history.shift();
+                
+                applyTransforms(progress);
+            };
+
+            const finishDrag = () => {
+                if (!isDragging) return;
+                isDragging = false;
+                
+                const progress = currentProgress;
+                let velocity = 0;
+                
+                if (history.length >= 2) {
+                    const first = history[0];
+                    const last = history[history.length - 1];
+                    const dt = last.t - first.t;
+                    if (dt > 0) velocity = (last.x - first.x) / dt;
+                }
+                
+                let newIndex = currentIndex;
+                
+                // Swipe thresholds
+                if (progress < -0.18 || velocity < -0.5) newIndex = Math.min(2, currentIndex + 1);
+                else if (progress > 0.18 || velocity > 0.5) newIndex = Math.max(0, currentIndex - 1);
+                
+                jumpTo(newIndex);
+            };
+
+            const jumpTo = (i) => {
+                setSpringTransition();
+                applyTransforms(0, i);
+                currentIndex = i;
+                updateIndicators(i);
+                setTimeout(() => clearTransition(), 600);
+            };
+
+            // Event Listeners for drag
+            container.addEventListener('pointerdown', onPointerDown);
+            container.addEventListener('pointermove', onPointerMove);
+            container.addEventListener('pointerup', finishDrag);
+            container.addEventListener('pointercancel', finishDrag);
+            container.addEventListener('pointerleave', finishDrag);
+            
+            // Touch fallbacks for older devices
+            container.addEventListener('touchstart', onPointerDown, {passive: true});
+            container.addEventListener('touchmove', onPointerMove, {passive: true});
+            container.addEventListener('touchend', finishDrag);
+
+            // Tab click listeners
+            tabs.forEach((tab, i) => {
+                tab.addEventListener('click', () => jumpTo(i));
+            });
+
+            // Initialize
+            applyTransforms(0, 0);
+            updateIndicators(0);
+        });
+    </script>
+
+</body></html>

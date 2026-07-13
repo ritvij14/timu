@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="en"><head><script id="aura-preview-performance-controller">
+(function() {
+if (window.__auraPreviewPerformanceController) return;
+const nativeRequestAnimationFrame = window.requestAnimationFrame
+? window.requestAnimationFrame.bind(window)
+: function(callback) { return window.setTimeout(function() { callback(Date.now()); }, 16); };
+const nativeCancelAnimationFrame = window.cancelAnimationFrame
+? window.cancelAnimationFrame.bind(window)
+: window.clearTimeout.bind(window);
+const nativeSetInterval = window.setInterval.bind(window);
+let paused = false;
+let nextFrameId = 1;
+const frameRecords = new Map();
+const pausedFrameCallbacks = new Map();
+const style = document.createElement('style');
+style.id = 'aura-preview-performance-style';
+style.textContent = [
+'html[data-aura-preview-paused="true"] *,',
+'html[data-aura-preview-paused="true"] *::before,',
+'html[data-aura-preview-paused="true"] *::after {',
+'  animation-play-state: paused !important;',
+'  transition-duration: 0s !important;',
+'  scroll-behavior: auto !important;',
+'}'
+].join('\n');
+document.head.appendChild(style);
+window.requestAnimationFrame = function(callback) {
+const frameId = nextFrameId++;
+if (paused) {
+pausedFrameCallbacks.set(frameId, callback);
+frameRecords.set(frameId, { paused: true });
+return frameId;
+}
+const nativeFrameId = nativeRequestAnimationFrame(function(timestamp) {
+frameRecords.delete(frameId);
+callback(timestamp);
+});
+frameRecords.set(frameId, { nativeFrameId: nativeFrameId });
+return frameId;
+};
+window.cancelAnimationFrame = function(frameId) {
+const record = frameRecords.get(frameId);
+pausedFrameCallbacks.delete(frameId);
+if (record && typeof record.nativeFrameId !== 'undefined') {
+nativeCancelAnimationFrame(record.nativeFrameId);
+}
+frameRecords.delete(frameId);
+};
+window.setInterval = function(callback, delay) {
+const args = Array.prototype.slice.call(arguments, 2);
+return nativeSetInterval(function() {
+if (paused) return;
+callback.apply(this, args);
+}, delay);
+};
+const flushPausedFrames = function() {
+const callbacks = Array.from(pausedFrameCallbacks.entries());
+pausedFrameCallbacks.clear();
+callbacks.forEach(function(entry) {
+const frameId = entry[0];
+const callback = entry[1];
+const nativeFrameId = nativeRequestAnimationFrame(function(timestamp) {
+frameRecords.delete(frameId);
+callback(timestamp);
+});
+frameRecords.set(frameId, { nativeFrameId: nativeFrameId });
+});
+};
+const setPaused = function(nextPaused) {
+const shouldPause = Boolean(nextPaused);
+if (paused === shouldPause) return;
+paused = shouldPause;
+document.documentElement.toggleAttribute('data-aura-preview-paused', paused);
+if (!paused) {
+flushPausedFrames();
+}
+};
+window.__auraPreviewPerformanceController = {
+setPaused: setPaused,
+get paused() {
+return paused;
+}
+};
+window.addEventListener('message', function(event) {
+if (event.source !== window.parent) return;
+if (!event.data || event.data.type !== 'aura-preview-performance-mode') return;
+setPaused(event.data.paused);
+});
+})();
+</script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Design Screen Inventory</title>
+<!-- Fonts -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&amp;family=Manrope:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<!-- Tailwind CSS -->
+<script src="https://cdn.tailwindcss.com"></script>
+<!-- Iconify -->
+<script src="https://code.iconify.design/iconify-icon/1.0.7/iconify-icon.min.js"></script>
+<style>
+/* Custom scrollbar for device frames */
+.device-scroll::-webkit-scrollbar {
+width: 4px;
+}
+.device-scroll::-webkit-scrollbar-track {
+background: transparent;
+}
+.device-scroll::-webkit-scrollbar-thumb {
+background: rgba(255, 255, 255, 0.1);
+border-radius: 10px;
+}
+</style></head>
+  <body class="bg-neutral-950 text-neutral-300 font-sans antialiased selection:bg-teal-500/30 selection:text-white min-h-screen pb-32 pt-8" style="font-family: 'Manrope', sans-serif;">
+    <!-- PAGE: ONBOARDING -->
+    <div>
+      <!-- Presentation Header -->
+      <header class="max-w-7xl mx-auto px-6 py-20 lg:px-12">
+        <div class="inline-flex items-center gap-3 mb-6 flex-wrap">
+          <span class="font-mono text-xs font-semibold tracking-wider text-teal-400 bg-teal-500/10 px-3 py-1.5 rounded-md border border-teal-500/20 uppercase">
+            STEP 0 · PRIMARY PATH
+          </span>
+          <span class="font-mono text-xs text-neutral-500">
+            PRD v1.1 §6 · PRODUCT-RULES.md §7
+          </span>
+        </div>
+        <h1 class="text-4xl lg:text-5xl font-semibold text-white tracking-tight mb-4">
+          Pair a machine
+        </h1>
+        <p class="text-base text-neutral-400 max-w-2xl leading-relaxed">
+          npx pairing + QR scan — scan to running session in well under a
+          minute. Manual SSH setup (§6 Steps 1–3) is a separate fallback path,
+          designed separately.
+        </p>
+      </header>
+
+      <main class="max-w-7xl mx-auto px-6 lg:px-12 flex flex-col gap-32">
+        <section class="mb-24">
+          <div class="flex items-center gap-3 mb-2">
+            <span class="font-mono text-xs font-semibold text-teal-400 bg-teal-500/10 px-2.5 py-1 rounded border border-teal-500/20">
+              00
+            </span>
+            <h2 class="text-xl font-semibold text-white tracking-tight">
+              First launch
+            </h2>
+          </div>
+          <p class="text-sm text-neutral-400 mb-8 max-w-2xl">
+            Zero machines paired yet. One CTA, nothing else competing for
+            attention.
+          </p>
+          <div class="flex flex-wrap gap-10">
+            <div class="flex flex-col gap-4">
+              <div class="relative w-[320px] h-[680px] bg-neutral-950 border-[6px] border-neutral-900 rounded-[3rem] overflow-hidden flex flex-col shadow-2xl shrink-0">
+                <div class="px-5 py-4 mt-8">
+                  <span class="text-xl font-semibold text-white tracking-tight">Sessions</span>
+                </div>
+                <div class="flex-1 flex flex-col items-center justify-center p-6 gap-4 text-center">
+                  <div class="w-16 h-16 rounded-2xl bg-neutral-900 border border-white/5 flex items-center justify-center gap-1">
+                    <span class="font-mono text-xl text-teal-400 font-semibold">
+                      &gt;
+                    </span>
+                    <span class="w-2 h-4 bg-teal-400 animate-pulse"></span>
+                  </div>
+                  <div class="text-lg font-semibold text-white tracking-tight">
+                    No machines paired yet
+                  </div>
+                  <div class="text-sm text-neutral-400 leading-relaxed">
+                    Pair a machine to run coding sessions from your phone.
+                  </div>
+                </div>
+                <div class="p-5">
+                  <button class="w-full py-3.5 bg-teal-500 text-neutral-950 rounded-xl text-sm font-semibold flex items-center justify-center gap-2">
+                    Pair a machine →
+                  </button>
+                  <div class="text-center mt-3 text-xs text-neutral-500">
+                    Takes about 30 seconds
+                  </div>
+                </div>
+              </div>
+              <p class="font-mono text-xs text-neutral-500 max-w-[320px] uppercase tracking-wide">
+                PRD §6 · one CTA, no manual-path clutter.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <section class="mb-24">
+          <div class="flex items-center gap-3 mb-2">
+            <span class="font-mono text-xs font-semibold text-teal-400 bg-teal-500/10 px-2.5 py-1 rounded border border-teal-500/20">
+              01
+            </span>
+            <h2 class="text-xl font-semibold text-white tracking-tight">
+              Scan
+            </h2>
+          </div>
+          <p class="text-sm text-neutral-400 mb-8 max-w-2xl">
+            Two devices, one ceremony: the computer prints readiness + a QR; the
+            phone's camera is the only input.
+          </p>
+          <div class="flex flex-wrap gap-10">
+            <div class="flex flex-col gap-4">
+              <span class="font-mono text-xs font-semibold text-neutral-500 uppercase tracking-widest">
+                On the Computer
+              </span>
+              <div class="w-[360px] rounded-xl bg-[#0A0A0A] border border-white/10 shadow-2xl overflow-hidden">
+                <div class="px-4 py-2.5 bg-neutral-900 border-b border-white/5 flex items-center gap-2">
+                  <div class="flex gap-1.5">
+                    <div class="w-2.5 h-2.5 rounded-full bg-rose-500/50"></div>
+                    <div class="w-2.5 h-2.5 rounded-full bg-amber-500/50"></div>
+                    <div class="w-2.5 h-2.5 rounded-full bg-emerald-500/50"></div>
+                  </div>
+                  <span class="text-xs text-neutral-500 mx-auto font-sans">
+                    mac-mini-home — zsh
+                  </span>
+                </div>
+                <div class="p-5 font-mono text-xs text-neutral-300 leading-loose">
+                  <div>
+                    <span class="text-teal-400">$</span>
+                    npx yourapp pair
+                  </div>
+                  <div class="text-neutral-500 mt-2">
+                    Checking this machine...
+                  </div>
+                  <div class="mt-2 flex flex-col gap-1 w-48">
+                    <div class="flex justify-between">
+                      <span>tmux</span>
+                      <span class="text-emerald-400">Ready</span>
+                    </div>
+                    <div class="flex justify-between">
+                      <span>git</span>
+                      <span class="text-emerald-400">Ready</span>
+                    </div>
+                    <div class="flex justify-between">
+                      <span>node</span>
+                      <span class="text-emerald-400">Ready</span>
+                    </div>
+                    <div class="flex justify-between">
+                      <span>pnpm</span>
+                      <span class="text-emerald-400">Ready</span>
+                    </div>
+                    <div class="flex justify-between">
+                      <span>claude</span>
+                      <span class="text-amber-400">Missing</span>
+                    </div>
+                  </div>
+                  <div class="text-neutral-500 mt-4">Scan this code:</div>
+                  <div class="mt-2 w-24 h-24 bg-white rounded-lg p-2 relative">
+                    <div class="absolute inset-2 bg-black/10 border-[3px] border-black rounded-sm"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="flex flex-col gap-4">
+              <span class="font-mono text-xs font-semibold text-neutral-500 uppercase tracking-widest">
+                On the Phone
+              </span>
+              <div class="relative w-[320px] h-[680px] bg-neutral-950 border-[6px] border-neutral-900 rounded-[3rem] overflow-hidden flex flex-col shadow-2xl">
+                <div class="px-4 py-4 mt-8 flex items-center">
+                  <iconify-icon icon="solar:alt-arrow-left-linear" class="text-2xl text-neutral-400 mr-2"></iconify-icon>
+                  <span class="text-base font-semibold text-white tracking-tight">
+                    Pair a machine
+                  </span>
+                </div>
+                <div class="mx-4 p-3.5 bg-neutral-900 border border-white/5 rounded-xl">
+                  <div class="text-xs font-semibold text-neutral-500 mb-2 uppercase tracking-widest">
+                    Run on your computer
+                  </div>
+                  <div class="flex items-center bg-[#0A0A0A] rounded-lg p-2 border border-white/5">
+                    <span class="font-mono text-xs text-white flex-1">
+                      <span class="text-teal-400">$</span>
+                      npx yourapp pair
+                    </span>
+                    <button class="text-xs font-semibold uppercase tracking-wider bg-white/5 px-2 py-1 rounded text-neutral-400">
+                      Copy
+                    </button>
+                  </div>
+                </div>
+                <div class="flex-1 flex flex-col items-center justify-center p-5">
+                  <div class="w-56 h-56 border-2 border-teal-400/30 rounded-2xl relative flex items-center justify-center overflow-hidden">
+                    <div class="absolute inset-0" style="background:repeating-linear-gradient(135deg, rgba(255,255,255,0.02) 0px, rgba(255,255,255,0.02) 10px, transparent 10px, transparent 20px)"></div>
+                    <div class="absolute inset-x-0 top-1/2 h-0.5 bg-teal-400 shadow-[0_0_12px_2px_teal]"></div>
+                  </div>
+                  <div class="mt-5 text-sm text-neutral-400 flex items-center gap-2">
+                    <div class="w-1.5 h-1.5 rounded-full bg-teal-400 animate-pulse"></div>
+                    Looking for a QR code...
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="mb-24">
+          <div class="flex items-center gap-3 mb-2">
+            <span class="font-mono text-xs font-semibold text-teal-400 bg-teal-500/10 px-2.5 py-1 rounded border border-teal-500/20">
+              02
+            </span>
+            <h2 class="text-xl font-semibold text-white tracking-tight">
+              Pairing
+            </h2>
+          </div>
+          <p class="text-sm text-neutral-400 mb-8 max-w-2xl">
+            Ephemeral key → device keypair → provisioned, in four steps that
+            resolve fast on purpose.
+          </p>
+          <div class="flex flex-wrap gap-10">
+            <div class="flex flex-col gap-4">
+              <span class="font-mono text-xs font-semibold text-neutral-500 uppercase tracking-widest">
+                In Progress
+              </span>
+              <div class="relative w-[320px] h-[680px] bg-neutral-950 border-[6px] border-neutral-900 rounded-[3rem] overflow-hidden flex flex-col shadow-2xl">
+                <div class="px-5 py-4 mt-8 flex justify-between items-center">
+                  <span class="text-base font-semibold text-white tracking-tight">
+                    Pairing...
+                  </span>
+                  <span class="text-sm font-medium text-neutral-400">
+                    Cancel
+                  </span>
+                </div>
+                <div class="px-5 flex items-center gap-2 mb-4">
+                  <span class="font-mono text-xs text-neutral-400">
+                    mac-mini-home
+                  </span>
+                  <span class="text-xs font-semibold tracking-wider bg-neutral-900 border border-white/5 px-1.5 py-0.5 rounded text-neutral-500 uppercase scale-90 origin-left">
+                    macOS
+                  </span>
+                </div>
+                <div class="px-5 flex flex-col gap-0">
+                  <div class="flex items-center gap-3 py-3 border-b border-white/5">
+                    <div class="w-5 h-5 rounded-full bg-emerald-500/20 flex items-center justify-center shrink-0">
+                      <span class="text-xs font-semibold text-emerald-400">
+                        ✓
+                      </span>
+                    </div>
+                    <span class="text-sm text-white">
+                      Connecting to mac-mini-home
+                    </span>
+                  </div>
+                  <div class="flex items-center gap-3 py-3 border-b border-white/5">
+                    <div class="w-5 h-5 rounded-full border-2 border-teal-400 border-t-transparent animate-spin shrink-0"></div>
+                    <span class="text-sm text-white">
+                      Generating device key
+                    </span>
+                  </div>
+                  <div class="flex items-center gap-3 py-3 border-b border-white/5">
+                    <div class="w-5 h-5 rounded-full border-2 border-white/10 shrink-0"></div>
+                    <span class="text-sm text-neutral-500">
+                      Provisioning access
+                    </span>
+                  </div>
+                  <div class="flex items-center gap-3 py-3">
+                    <div class="w-5 h-5 rounded-full border-2 border-white/10 shrink-0"></div>
+                    <span class="text-sm text-neutral-500">
+                      Checking machine
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="flex flex-col gap-4">
+              <span class="font-mono text-xs font-semibold text-neutral-500 uppercase tracking-widest">
+                Error · Expired
+              </span>
+              <div class="relative w-[320px] h-[680px] bg-neutral-950 border-[6px] border-neutral-900 rounded-[3rem] overflow-hidden flex flex-col shadow-2xl">
+                <div class="px-4 py-4 mt-8 flex items-center">
+                  <iconify-icon icon="solar:alt-arrow-left-linear" class="text-2xl text-neutral-400 mr-2"></iconify-icon>
+                  <span class="text-base font-semibold text-white tracking-tight">
+                    Couldn't pair
+                  </span>
+                </div>
+                <div class="px-5 flex items-center gap-2 mb-2">
+                  <span class="font-mono text-xs text-neutral-400">
+                    mac-mini-home
+                  </span>
+                  <span class="text-xs font-semibold tracking-wider bg-neutral-900 border border-white/5 px-1.5 py-0.5 rounded text-neutral-500 uppercase scale-90 origin-left">
+                    macOS
+                  </span>
+                </div>
+                <div class="px-5 flex flex-col gap-0 mb-4">
+                  <div class="flex items-center gap-3 py-3 border-b border-white/5">
+                    <div class="w-5 h-5 rounded-full bg-rose-500/20 flex items-center justify-center shrink-0">
+                      <span class="text-xs font-semibold text-rose-400">✕</span>
+                    </div>
+                    <span class="text-sm text-white">
+                      Connecting to mac-mini-home
+                    </span>
+                  </div>
+                  <div class="flex items-center gap-3 py-3 border-b border-white/5">
+                    <div class="w-5 h-5 rounded-full border-2 border-white/10 shrink-0"></div>
+                    <span class="text-sm text-neutral-500">
+                      Generating device key
+                    </span>
+                  </div>
+                </div>
+                <div class="mx-5 p-4 bg-neutral-900 border border-white/5 rounded-xl">
+                  <div class="flex items-center gap-2 mb-2">
+                    <div class="w-6 h-6 rounded-full bg-rose-500/20 flex items-center justify-center">
+                      <span class="text-xs font-semibold text-rose-400">✕</span>
+                    </div>
+                    <span class="font-semibold text-white text-base">
+                      This code expired
+                    </span>
+                  </div>
+                  <div class="text-xs text-neutral-400 mb-3 leading-relaxed">
+                    Pairing codes last about 2 minutes. Run the command again
+                    for a fresh one.
+                  </div>
+                  <div class="flex items-center bg-[#0A0A0A] rounded-lg p-2 border border-white/5">
+                    <span class="font-mono text-xs text-white flex-1">
+                      <span class="text-teal-400">$</span>
+                      npx yourapp pair
+                    </span>
+                    <button class="text-xs font-semibold uppercase tracking-wider bg-white/5 px-2 py-1 rounded text-neutral-400">
+                      Copy
+                    </button>
+                  </div>
+                </div>
+                <div class="flex-1"></div>
+                <div class="p-5">
+                  <button class="w-full py-3.5 bg-teal-500 text-neutral-950 rounded-xl text-sm font-semibold">
+                    Scan again
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="mb-24">
+          <div class="flex items-center gap-3 mb-2">
+            <span class="font-mono text-xs font-semibold text-teal-400 bg-teal-500/10 px-2.5 py-1 rounded border border-teal-500/20">
+              03
+            </span>
+            <h2 class="text-xl font-semibold text-white tracking-tight">
+              Outcome
+            </h2>
+          </div>
+          <p class="text-sm text-neutral-400 mb-8 max-w-2xl">
+            Same successful connection, two endings: fully ready, or one thing
+            standing between here and a session.
+          </p>
+          <div class="flex flex-wrap gap-10">
+            <div class="flex flex-col gap-4">
+              <span class="font-mono text-xs font-semibold text-neutral-500 uppercase tracking-widest">
+                Fully Ready
+              </span>
+              <div class="relative w-[320px] h-[680px] bg-neutral-950 border-[6px] border-neutral-900 rounded-[3rem] overflow-hidden flex flex-col shadow-2xl">
+                <div class="px-5 py-4 mt-8 flex justify-end">
+                  <span class="text-xs font-mono font-semibold text-teal-400 bg-teal-500/10 px-2.5 py-1 rounded-full scale-90 origin-right">
+                    Done in 3.8s
+                  </span>
+                </div>
+                <div class="flex-1 flex flex-col items-center justify-center p-6 text-center gap-4">
+                  <div class="w-16 h-16 rounded-full bg-emerald-500/20 border border-emerald-500/50 flex items-center justify-center relative">
+                    <div class="absolute inset-0 border-2 border-emerald-500/50 rounded-full animate-ping opacity-20"></div>
+                    <span class="text-2xl font-semibold text-emerald-400">
+                      ✓
+                    </span>
+                  </div>
+                  <div class="text-xl font-semibold text-white tracking-tight">
+                    Paired with mac-mini-home
+                  </div>
+                  <div class="text-sm text-neutral-400 leading-relaxed">
+                    Your device key is stored securely on this phone. It won't
+                    need the pairing code again.
+                  </div>
+                </div>
+                <div class="p-5">
+                  <button class="w-full py-3.5 bg-teal-500 text-neutral-950 rounded-xl text-sm font-semibold">
+                    Continue
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div class="flex flex-col gap-4">
+              <span class="font-mono text-xs font-semibold text-neutral-500 uppercase tracking-widest">
+                Something Missing
+              </span>
+              <div class="relative w-[320px] h-[680px] bg-neutral-950 border-[6px] border-neutral-900 rounded-[3rem] overflow-hidden flex flex-col shadow-2xl">
+                <div class="px-4 py-4 mt-8 flex items-center">
+                  <iconify-icon icon="solar:alt-arrow-left-linear" class="text-2xl text-neutral-400 mr-2"></iconify-icon>
+                  <span class="text-base font-semibold text-white tracking-tight">
+                    mac-mini-home
+                  </span>
+                </div>
+                <div class="px-5 mb-4">
+                  <div class="flex items-center gap-2 mb-1">
+                    <span class="text-base font-semibold text-white">
+                      Ready to go — almost
+                    </span>
+                    <span class="text-xs font-semibold tracking-wider bg-neutral-900 border border-white/5 px-1.5 py-0.5 rounded text-neutral-500 uppercase scale-90 origin-left">
+                      macOS
+                    </span>
+                  </div>
+                  <div class="text-xs text-neutral-400">
+                    One thing needs attention before you can start.
+                  </div>
+                </div>
+                <div class="mx-5 p-3.5 bg-[#0A0A0A] border border-white/5 rounded-xl font-mono text-xs flex flex-col gap-2.5">
+                  <div class="flex justify-between">
+                    <span class="text-white">tmux</span>
+                    <span class="text-rose-400 font-semibold">Missing</span>
+                  </div>
+                  <div class="flex justify-between">
+                    <span class="text-white">git</span>
+                    <span class="text-neutral-500">Ready</span>
+                  </div>
+                  <div class="flex justify-between">
+                    <span class="text-white">claude</span>
+                    <span class="text-amber-400 font-semibold">Missing</span>
+                  </div>
+                </div>
+                <div class="mx-5 mt-4 p-4 bg-neutral-900 border border-rose-500/30 rounded-xl">
+                  <div class="text-xs font-semibold text-rose-400 mb-2 uppercase tracking-widest">
+                    TMUX MISSING
+                  </div>
+                  <div class="text-xs text-white mb-3 leading-relaxed">
+                    tmux is needed to keep coding sessions alive after you close
+                    the app.
+                  </div>
+                  <div class="flex items-center bg-[#0A0A0A] rounded-lg p-2 border border-white/5 mb-3">
+                    <span class="font-mono text-xs text-white flex-1">
+                      <span class="text-teal-400">$</span>
+                      brew install tmux
+                    </span>
+                    <button class="text-xs font-semibold uppercase tracking-wider bg-white/5 px-2 py-1 rounded text-neutral-400">
+                      Copy
+                    </button>
+                  </div>
+                  <button class="w-full py-2 border border-white/10 rounded-lg text-xs font-semibold text-white hover:bg-white/5">
+                    Recheck
+                  </button>
+                </div>
+                <div class="flex-1"></div>
+                <div class="p-5 text-center">
+                  <div class="text-xs text-neutral-500 mb-3">
+                    Continue unlocks once tmux is installed
+                  </div>
+                  <button class="w-full py-3.5 bg-neutral-900 border border-white/5 text-neutral-600 rounded-xl text-sm font-semibold cursor-not-allowed">
+                    Continue
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+  
+</body></html>

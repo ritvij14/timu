@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="en"><head><script id="aura-preview-performance-controller">
+(function() {
+if (window.__auraPreviewPerformanceController) return;
+const nativeRequestAnimationFrame = window.requestAnimationFrame
+? window.requestAnimationFrame.bind(window)
+: function(callback) { return window.setTimeout(function() { callback(Date.now()); }, 16); };
+const nativeCancelAnimationFrame = window.cancelAnimationFrame
+? window.cancelAnimationFrame.bind(window)
+: window.clearTimeout.bind(window);
+const nativeSetInterval = window.setInterval.bind(window);
+let paused = false;
+let nextFrameId = 1;
+const frameRecords = new Map();
+const pausedFrameCallbacks = new Map();
+const style = document.createElement('style');
+style.id = 'aura-preview-performance-style';
+style.textContent = [
+'html[data-aura-preview-paused="true"] *,',
+'html[data-aura-preview-paused="true"] *::before,',
+'html[data-aura-preview-paused="true"] *::after {',
+'  animation-play-state: paused !important;',
+'  transition-duration: 0s !important;',
+'  scroll-behavior: auto !important;',
+'}'
+].join('\n');
+document.head.appendChild(style);
+window.requestAnimationFrame = function(callback) {
+const frameId = nextFrameId++;
+if (paused) {
+pausedFrameCallbacks.set(frameId, callback);
+frameRecords.set(frameId, { paused: true });
+return frameId;
+}
+const nativeFrameId = nativeRequestAnimationFrame(function(timestamp) {
+frameRecords.delete(frameId);
+callback(timestamp);
+});
+frameRecords.set(frameId, { nativeFrameId: nativeFrameId });
+return frameId;
+};
+window.cancelAnimationFrame = function(frameId) {
+const record = frameRecords.get(frameId);
+pausedFrameCallbacks.delete(frameId);
+if (record && typeof record.nativeFrameId !== 'undefined') {
+nativeCancelAnimationFrame(record.nativeFrameId);
+}
+frameRecords.delete(frameId);
+};
+window.setInterval = function(callback, delay) {
+const args = Array.prototype.slice.call(arguments, 2);
+return nativeSetInterval(function() {
+if (paused) return;
+callback.apply(this, args);
+}, delay);
+};
+const flushPausedFrames = function() {
+const callbacks = Array.from(pausedFrameCallbacks.entries());
+pausedFrameCallbacks.clear();
+callbacks.forEach(function(entry) {
+const frameId = entry[0];
+const callback = entry[1];
+const nativeFrameId = nativeRequestAnimationFrame(function(timestamp) {
+frameRecords.delete(frameId);
+callback(timestamp);
+});
+frameRecords.set(frameId, { nativeFrameId: nativeFrameId });
+});
+};
+const setPaused = function(nextPaused) {
+const shouldPause = Boolean(nextPaused);
+if (paused === shouldPause) return;
+paused = shouldPause;
+document.documentElement.toggleAttribute('data-aura-preview-paused', paused);
+if (!paused) {
+flushPausedFrames();
+}
+};
+window.__auraPreviewPerformanceController = {
+setPaused: setPaused,
+get paused() {
+return paused;
+}
+};
+window.addEventListener('message', function(event) {
+if (event.source !== window.parent) return;
+if (!event.data || event.data.type !== 'aura-preview-performance-mode') return;
+setPaused(event.data.paused);
+});
+})();
+</script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Inbox Flow</title>
+<!-- Fonts -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<!-- Tailwind -->
+<script src="https://cdn.tailwindcss.com"></script>
+<!-- Iconify -->
+<script src="https://code.iconify.design/iconify-icon/1.0.7/iconify-icon.min.js"></script>
+<style>
+.no-scrollbar::-webkit-scrollbar {
+display: none;
+}
+.no-scrollbar {
+-ms-overflow-style: none;
+scrollbar-width: none;
+}
+/* Iconify default stroke width override */
+iconify-icon {
+--iconify-stroke-width: 1.5;
+}
+</style></head>
+<body class="bg-[#0A0A0A] text-neutral-300 font-sans antialiased min-h-screen pb-32" style="font-family: 'Inter', sans-serif;">
+
+    <!-- Top Documentation Header -->
+    <header class="max-w-7xl mx-auto px-6 py-20 lg:px-12">
+        <div class="inline-flex items-center gap-3 mb-6 flex-wrap">
+            <span class="font-mono text-xs font-medium tracking-wider text-teal-400 bg-teal-500/10 px-3 py-1.5 rounded-md border border-teal-500/20 uppercase">
+                Round 3 · Inbox
+            </span>
+            <span class="font-mono text-xs text-neutral-500">
+                PRD v1.1 §19 · PRODUCT-RULES.md §3–§4
+            </span>
+        </div>
+        <h1 class="text-4xl font-semibold text-neutral-100 tracking-tight mb-4">
+            Inbox
+        </h1>
+        <p class="text-sm text-neutral-400 max-w-2xl leading-relaxed">
+            The core hub — everything else in the product propagates from here. Flat chat list, no section headers, no legend. State lives entirely in each row's anatomy, never in list position alone.
+        </p>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-6 lg:px-12 flex flex-col gap-32">
+        
+        <!-- SECTION 00: Cold Open -->
+        <section>
+            <div class="flex items-center gap-3 mb-2">
+                <span class="font-mono text-xs font-medium text-teal-400 bg-teal-500/10 px-2.5 py-1 rounded border border-teal-500/20">00</span>
+                <h2 class="text-xl font-medium text-neutral-100 tracking-tight">Cold open — the test scene</h2>
+            </div>
+            <p class="text-sm text-neutral-400 mb-12 max-w-2xl">
+                Needs-you pinned top, everything else by recency, idle muted at the bottom. No other ordering logic. The digest banner is the one line of explicit orientation.
+            </p>
+
+            <div class="flex flex-wrap items-start gap-12 lg:gap-20">
+                
+                <!-- Frame 1: Mobile Inbox -->
+                <div class="flex flex-col gap-5">
+                    <div class="w-[360px] h-[780px] bg-neutral-950 border-[6px] border-neutral-900 rounded-[3rem] overflow-hidden flex flex-col shadow-2xl relative shrink-0">
+                        
+                        <!-- Status Bar -->
+                        <div class="h-12 flex justify-between items-center px-6 pt-3 pb-1 text-xs font-medium text-neutral-500 z-10 bg-neutral-950">
+                            <span>9:41</span>
+                            <div class="w-28 h-6 bg-black rounded-full absolute left-1/2 -translate-x-1/2 top-2"></div>
+                            <div class="flex gap-1.5 items-center">
+                                <iconify-icon icon="solar:cellular-linear"></iconify-icon>
+                                <iconify-icon icon="solar:wi-fi-linear"></iconify-icon>
+                                <iconify-icon icon="solar:battery-charge-linear"></iconify-icon>
+                            </div>
+                        </div>
+
+                        <!-- Header area -->
+                        <div class="px-5 pt-2 pb-3">
+                            <div class="flex items-center justify-between mb-4 mt-2">
+                                <h2 class="text-3xl font-semibold text-neutral-100 tracking-tight">Sessions</h2>
+                                <button class="w-9 h-9 rounded-xl bg-neutral-900 border border-white/5 flex items-center justify-center text-neutral-400 hover:text-neutral-200 transition-colors">
+                                    <iconify-icon icon="solar:settings-linear" class="text-lg"></iconify-icon>
+                                </button>
+                            </div>
+
+                            <!-- Machine tags -->
+                            <div class="flex items-center gap-2 mb-4">
+                                <div class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-neutral-900 border border-white/5">
+                                    <div class="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.4)]"></div>
+                                    <span class="font-mono text-xs text-neutral-400" style="font-family: 'JetBrains Mono', monospace;">mac-mini</span>
+                                </div>
+                                <div class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-neutral-900 border border-white/5">
+                                    <div class="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.4)]"></div>
+                                    <span class="font-mono text-xs text-neutral-400" style="font-family: 'JetBrains Mono', monospace;">vps-hz</span>
+                                </div>
+                            </div>
+
+                            <!-- Digest Banner -->
+                            <div class="flex items-start gap-3 p-3 bg-teal-500/10 border border-teal-500/20 rounded-xl mb-2">
+                                <iconify-icon icon="solar:clock-circle-linear" class="text-teal-400 text-base mt-0.5 shrink-0"></iconify-icon>
+                                <p class="text-sm text-neutral-300 leading-relaxed">
+                                    <span class="font-semibold text-teal-400">While you were away:</span> docker build failed · claude finished in kendal-crm · main
+                                </p>
+                            </div>
+                        </div>
+
+                        <!-- List Area -->
+                        <div class="flex-1 overflow-y-auto no-scrollbar px-3 pb-24 flex flex-col gap-1">
+                            
+                            <!-- Needs-you row -->
+                            <div class="flex flex-col gap-1.5 p-3.5 rounded-2xl bg-neutral-900/40 hover:bg-neutral-900/80 border border-transparent hover:border-white/5 transition-all cursor-pointer">
+                                <div class="flex items-center justify-between gap-3">
+                                    <span class="text-base font-semibold text-neutral-100 truncate">kendal-crm · feat/auth</span>
+                                    <div class="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-red-500/10 border border-red-500/20 text-xs font-semibold text-red-400 shrink-0">
+                                        <iconify-icon icon="solar:close-circle-linear" class="text-sm"></iconify-icon>
+                                        Failed
+                                    </div>
+                                </div>
+                                <div class="flex items-center justify-between gap-4">
+                                    <span class="font-mono text-xs text-neutral-400 truncate" style="font-family: 'JetBrains Mono', monospace;">cmd ✕ exit 1, claude ● working</span>
+                                    <span class="text-xs text-neutral-500 shrink-0">mac-mini · 4m</span>
+                                </div>
+                            </div>
+
+                            <!-- Unread finished row -->
+                            <div class="flex flex-col gap-1.5 p-3.5 rounded-2xl bg-neutral-900/40 hover:bg-neutral-900/80 border border-transparent hover:border-white/5 transition-all cursor-pointer">
+                                <div class="flex items-center justify-between gap-3">
+                                    <span class="text-base font-semibold text-neutral-100 truncate">kendal-crm · main</span>
+                                    <div class="flex items-center gap-2 shrink-0">
+                                        <div class="w-1.5 h-1.5 rounded-full bg-teal-400 shadow-[0_0_8px_rgba(45,212,191,0.5)]"></div>
+                                        <span class="text-xs font-semibold text-teal-400">Finished</span>
+                                    </div>
+                                </div>
+                                <div class="flex items-center justify-between gap-4">
+                                    <span class="font-mono text-xs text-neutral-400 truncate" style="font-family: 'JetBrains Mono', monospace;">claude ✓ "auth tests green, 9 files..."</span>
+                                    <span class="text-xs text-neutral-500 shrink-0">mac-mini · 20m</span>
+                                </div>
+                            </div>
+
+                            <!-- Running row -->
+                            <div class="flex flex-col gap-1.5 p-3.5 rounded-2xl hover:bg-neutral-900/50 border border-transparent transition-all cursor-pointer">
+                                <div class="flex items-center justify-between gap-3">
+                                    <span class="text-base font-medium text-neutral-300 truncate">dotfiles · main</span>
+                                    <div class="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0"></div>
+                                </div>
+                                <div class="flex items-center justify-between gap-4">
+                                    <span class="font-mono text-xs text-neutral-500 truncate" style="font-family: 'JetBrains Mono', monospace;">cmd ● npm test --watch, all seen</span>
+                                    <span class="text-xs text-neutral-500 shrink-0">vps-hz · 1h</span>
+                                </div>
+                            </div>
+
+                            <!-- Idle row -->
+                            <div class="flex flex-col gap-1.5 p-3.5 rounded-2xl hover:bg-neutral-900/50 border border-transparent transition-all cursor-pointer opacity-60">
+                                <div class="flex items-center justify-between gap-3">
+                                    <span class="text-base font-medium text-neutral-400 truncate">blog-api · main</span>
+                                </div>
+                                <div class="flex items-center justify-between gap-4">
+                                    <span class="text-xs text-neutral-500 truncate">Nothing running — recents kept warm</span>
+                                    <span class="text-xs text-neutral-500 shrink-0">vps-hz · idle 2d</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Floating Action Button -->
+                        <button class="absolute bottom-10 right-5 w-14 h-14 bg-teal-500 text-neutral-950 rounded-full flex items-center justify-center shadow-[0_8px_20px_rgba(45,212,191,0.25)] hover:bg-teal-400 hover:scale-105 transition-all z-20">
+                            <iconify-icon icon="solar:add-linear" class="text-3xl"></iconify-icon>
+                        </button>
+
+                        <!-- Home Indicator -->
+                        <div class="absolute bottom-1.5 left-1/2 -translate-x-1/2 w-32 h-1 bg-white/20 rounded-full z-30"></div>
+                    </div>
+                    
+                    <p class="font-mono text-xs text-neutral-500 max-w-[360px] leading-relaxed">
+                        RULES §4 · headerless sort · badge tap deep-links to the owning child, row tap follows resume rules — the ✕ above lands on claude chat, not the failure.
+                    </p>
+                </div>
+
+                <!-- Right Column: Row Anatomy Legend -->
+                <div class="flex flex-col">
+                    <span class="font-mono text-[10px] font-medium tracking-wider text-neutral-500 uppercase mb-6">Row Anatomy — The Four States</span>
+                    
+                    <div class="flex flex-col gap-6 w-full max-w-[420px]">
+                        
+                        <!-- Needs you anatomy -->
+                        <div class="flex flex-col gap-3">
+                            <div class="p-4 rounded-xl bg-neutral-900 border border-white/5">
+                                <div class="flex items-center justify-between gap-3 mb-1.5">
+                                    <span class="text-base font-semibold text-neutral-100 truncate">kendal-crm · feat/auth</span>
+                                    <div class="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-red-500/10 border border-red-500/20 text-xs font-semibold text-red-400 shrink-0">
+                                        <iconify-icon icon="solar:close-circle-linear" class="text-sm"></iconify-icon>
+                                        Failed
+                                    </div>
+                                </div>
+                                <span class="font-mono text-xs text-neutral-400 truncate block" style="font-family: 'JetBrains Mono', monospace;">cmd ✕ exit 1, claude ● working</span>
+                            </div>
+                            <p class="font-mono text-xs text-neutral-500 leading-relaxed">
+                                <strong class="font-medium text-neutral-300 font-sans">needs-you</strong> — semibold title + filled badge, word required.
+                            </p>
+                        </div>
+
+                        <!-- Unread finished anatomy -->
+                        <div class="flex flex-col gap-3">
+                            <div class="p-4 rounded-xl bg-neutral-900 border border-white/5">
+                                <div class="flex items-center justify-between gap-3 mb-1.5">
+                                    <span class="text-base font-semibold text-neutral-100 truncate">kendal-crm · main</span>
+                                    <div class="flex items-center gap-2 shrink-0">
+                                        <div class="w-1.5 h-1.5 rounded-full bg-teal-400 shadow-[0_0_8px_rgba(45,212,191,0.5)]"></div>
+                                        <span class="text-xs font-semibold text-teal-400">Finished</span>
+                                    </div>
+                                </div>
+                                <span class="font-mono text-xs text-neutral-400 truncate block" style="font-family: 'JetBrains Mono', monospace;">claude ✓ "auth tests green, 9 files changed"</span>
+                            </div>
+                            <p class="font-mono text-xs text-neutral-500 leading-relaxed">
+                                <strong class="font-medium text-neutral-300 font-sans">unread finished</strong> — semibold title + dot badge, quieter than needs-you.
+                            </p>
+                        </div>
+
+                        <!-- Running anatomy -->
+                        <div class="flex flex-col gap-3">
+                            <div class="p-4 rounded-xl bg-neutral-900 border border-white/5">
+                                <div class="flex items-center justify-between gap-3 mb-1.5">
+                                    <span class="text-base font-medium text-neutral-300 truncate">dotfiles · main</span>
+                                    <div class="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0"></div>
+                                </div>
+                                <span class="font-mono text-xs text-neutral-500 truncate block" style="font-family: 'JetBrains Mono', monospace;">cmd ● npm test --watch, all seen</span>
+                            </div>
+                            <p class="font-mono text-xs text-neutral-500 leading-relaxed">
+                                <strong class="font-medium text-neutral-300 font-sans">running</strong> — medium weight + quiet glyph, no badge pill.
+                            </p>
+                        </div>
+
+                        <!-- Idle anatomy -->
+                        <div class="flex flex-col gap-3">
+                            <div class="p-4 rounded-xl bg-neutral-900 border border-white/5 opacity-60">
+                                <div class="flex items-center justify-between gap-3 mb-1.5">
+                                    <span class="text-base font-medium text-neutral-400 truncate">blog-api · main</span>
+                                </div>
+                                <span class="text-xs text-neutral-500 truncate block">Nothing running — recents kept warm</span>
+                            </div>
+                            <p class="font-mono text-xs text-neutral-500 leading-relaxed">
+                                <strong class="font-medium text-neutral-300 font-sans">idle</strong> — muted row, written state instead of a badge.
+                            </p>
+                        </div>
+
+                    </div>
+                </div>
+
+            </div>
+        </section>
+
+        <!-- SECTION 01: Empty Inbox -->
+        <section>
+            <div class="flex items-center gap-3 mb-2">
+                <span class="font-mono text-xs font-medium text-teal-400 bg-teal-500/10 px-2.5 py-1 rounded border border-teal-500/20">01</span>
+                <h2 class="text-xl font-medium text-neutral-100 tracking-tight">Empty inbox</h2>
+            </div>
+            <p class="text-sm text-neutral-400 mb-12 max-w-2xl">
+                Distinct from Round 1's first-launch state: the machine is already paired here — there's simply no session on it yet.
+            </p>
+
+            <div class="flex flex-wrap items-start gap-12">
+                
+                <!-- Frame 2: Empty State -->
+                <div class="flex flex-col gap-5">
+                    <div class="w-[360px] h-[780px] bg-neutral-950 border-[6px] border-neutral-900 rounded-[3rem] overflow-hidden flex flex-col shadow-2xl relative shrink-0">
+                        
+                        <!-- Status Bar -->
+                        <div class="h-12 flex justify-between items-center px-6 pt-3 pb-1 text-xs font-medium text-neutral-500 z-10 bg-neutral-950">
+                            <span>9:41</span>
+                            <div class="w-28 h-6 bg-black rounded-full absolute left-1/2 -translate-x-1/2 top-2"></div>
+                            <div class="flex gap-1.5 items-center">
+                                <iconify-icon icon="solar:cellular-linear"></iconify-icon>
+                                <iconify-icon icon="solar:wi-fi-linear"></iconify-icon>
+                                <iconify-icon icon="solar:battery-charge-linear"></iconify-icon>
+                            </div>
+                        </div>
+
+                        <!-- Header area -->
+                        <div class="px-5 pt-2 pb-3">
+                            <h2 class="text-3xl font-semibold text-neutral-100 tracking-tight mb-4 mt-2">Sessions</h2>
+                            
+                            <!-- Machine tags -->
+                            <div class="flex items-center gap-2">
+                                <div class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-neutral-900 border border-white/5">
+                                    <div class="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.4)]"></div>
+                                    <span class="font-mono text-xs text-neutral-400" style="font-family: 'JetBrains Mono', monospace;">mac-mini</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Empty State Content -->
+                        <div class="flex-1 flex flex-col items-center justify-center p-8 text-center pb-20">
+                            <div class="w-16 h-16 rounded-2xl bg-neutral-900 border border-white/5 flex items-center justify-center mb-6 shadow-sm">
+                                <span class="font-mono text-xl text-neutral-500" style="font-family: 'JetBrains Mono', monospace;">$_</span>
+                            </div>
+                            <h3 class="text-xl font-semibold text-neutral-100 tracking-tight mb-2">No sessions yet</h3>
+                            <p class="text-sm text-neutral-400 max-w-[240px] leading-relaxed">
+                                Pick a folder on mac-mini-home to start your first session.
+                            </p>
+                        </div>
+                        
+                        <!-- Bottom Action -->
+                        <div class="px-5 pb-10">
+                            <button class="w-full h-14 bg-teal-500 text-neutral-950 font-semibold rounded-xl flex items-center justify-center gap-2 hover:bg-teal-400 transition-colors">
+                                <span class="text-sm">New session</span>
+                                <iconify-icon icon="solar:alt-arrow-right-linear" class="text-lg"></iconify-icon>
+                            </button>
+                        </div>
+
+                        <!-- Home Indicator -->
+                        <div class="absolute bottom-1.5 left-1/2 -translate-x-1/2 w-32 h-1 bg-white/20 rounded-full z-30"></div>
+                    </div>
+                    
+                    <p class="font-mono text-xs text-neutral-500 max-w-[360px] leading-relaxed">
+                        Paired, zero sessions — different problem, different copy, from Round 1's "no machines paired" empty state.
+                    </p>
+                </div>
+            </div>
+        </section>
+        
+        <!-- Next Steps -->
+        <div class="pt-8 pb-12 text-center">
+            <span class="font-mono text-xs text-neutral-500 uppercase tracking-wider">Next: Round 4 — Agent child &amp; attention</span>
+        </div>
+
+    </main>
+
+</body></html>
