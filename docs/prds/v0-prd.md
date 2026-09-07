@@ -138,7 +138,7 @@ Failure state should be clear and actionable:
 
 ### CLI Pairing Onboarding (`npx timu-app`)
 
-The `npx timu-app` one-time SSH pairing ceremony is an alternative onboarding path to the manual connection form above. The CLI side (`timu-pair` Rust binary + `timu-npx` launcher) is feature-complete and automated-tested (56 tests passing). The following items remain undone and block real-world use:
+The `npx timu-app` one-time SSH pairing ceremony is an alternative onboarding path to the manual connection form above. The CLI side (`timu-pair` Rust binary + `timu-npx` launcher) is feature-complete and automated-tested (`cargo test` in `timu-pair/`, `npm test` in `timu-npx/`). The following items remain undone and block real-world use:
 
 3. **macOS Remote Login enablement unverified on real hardware** — the `sudo systemsetup -setremotelogin on` code path exists and is tested through the `System` trait seam, but has never been run on a Mac with Remote Login disabled. The sudo authorization dialog path is untested.
 4. **VPS acceptance not done** — `--host`/`--user`/`--port` override parsing is tested, but no one has run `npx timu-app --host <vps> --user <user> --port <port>` against a real VPS and completed pairing.

@@ -1,10 +1,19 @@
 use base64::Engine;
-use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
+use base64::engine::general_purpose::STANDARD;
+use flate2::Compression;
+use flate2::read::ZlibDecoder;
+use flate2::write::ZlibEncoder;
 use serde::{Deserialize, Serialize};
+use std::io::Read;
+use std::io::Write;
 
 use crate::PayloadError;
 
-const QR_PREFIX: &str = "timu://pair?data=";
+/// Matches the completion command's stdin bound; a decompressed QR payload
+/// larger than this is a decompression bomb, not a pairing payload.
+const MAX_QR_PAYLOAD_JSON_BYTES: usize = 8192;
+
+const OPENSSH_KEY_MAGIC: &[u8] = b"openssh-key-v1\0";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -21,16 +30,24 @@ pub struct PairingPayload {
 }
 
 impl PairingPayload {
-    pub fn encode_for_qr(&self) -> Result<String, PayloadError> {
+    pub fn encode_for_qr(&self) -> Result<Vec<u8>, PayloadError> {
         let json = serde_json::to_vec(self).map_err(|_| PayloadError::Invalid)?;
-        Ok(format!("{QR_PREFIX}{}", URL_SAFE_NO_PAD.encode(json)))
+        let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
+        encoder
+            .write_all(&json)
+            .map_err(|_| PayloadError::Invalid)?;
+        encoder.finish().map_err(|_| PayloadError::Invalid)
     }
 
-    pub fn decode_from_qr(value: &str, now_unix: u64) -> Result<Self, PayloadError> {
-        let encoded = value.strip_prefix(QR_PREFIX).ok_or(PayloadError::Invalid)?;
-        let json = URL_SAFE_NO_PAD
-            .decode(encoded)
+    pub fn decode_from_qr(value: &[u8], now_unix: u64) -> Result<Self, PayloadError> {
+        let mut json = Vec::new();
+        ZlibDecoder::new(value)
+            .take(MAX_QR_PAYLOAD_JSON_BYTES as u64 + 1)
+            .read_to_end(&mut json)
             .map_err(|_| PayloadError::Invalid)?;
+        if json.len() > MAX_QR_PAYLOAD_JSON_BYTES {
+            return Err(PayloadError::Invalid);
+        }
         let payload: Self = serde_json::from_slice(&json).map_err(|_| PayloadError::Invalid)?;
         if payload.version != 1 {
             return Err(PayloadError::UnsupportedVersion);
@@ -42,7 +59,7 @@ impl PairingPayload {
             || payload.host.is_empty()
             || payload.username.is_empty()
             || payload.host_key_fingerprint.is_empty()
-            || payload.ephemeral_private_key.is_empty()
+            || !is_base64_ed25519_seed(&payload.ephemeral_private_key)
         {
             return Err(PayloadError::Invalid);
         }
@@ -127,4 +144,52 @@ fn is_canonical_host_key_fingerprint(value: &str) -> bool {
         return false;
     };
     digest.len() == 32 && base64::engine::general_purpose::STANDARD_NO_PAD.encode(digest) == encoded
+}
+
+fn is_base64_ed25519_seed(value: &str) -> bool {
+    STANDARD.decode(value).is_ok_and(|bytes| bytes.len() == 32)
+}
+
+/// Extracts the 32-byte Ed25519 seed from an unencrypted OpenSSH private key
+/// (`openssh-key-v1` format, the `ssh-keygen` default).
+///
+/// The seed is the first 32 bytes of the 64-byte private field
+/// (seed || public). Reconstructing the OpenSSH keypair from this seed is the
+/// phone client's responsibility; the CLI ships only the seed.
+pub fn ed25519_seed_from_openssh_private_key(pem: &str) -> Result<[u8; 32], PayloadError> {
+    let body: String = pem.lines().filter(|line| !line.starts_with("-----")).collect();
+    let blob = STANDARD
+        .decode(body.trim())
+        .map_err(|_| PayloadError::Invalid)?;
+
+    let rest = blob
+        .get(OPENSSH_KEY_MAGIC.len()..)
+        .filter(|_| blob.starts_with(OPENSSH_KEY_MAGIC))
+        .ok_or(PayloadError::Invalid)?;
+    let (_, rest) = read_ssh_string(rest).ok_or(PayloadError::Invalid)?; // cipher
+    let (_, rest) = read_ssh_string(rest).ok_or(PayloadError::Invalid)?; // kdf
+    let (_, rest) = read_ssh_string(rest).ok_or(PayloadError::Invalid)?; // kdfoptions
+    let key_count = u32::from_be_bytes(rest.get(..4).ok_or(PayloadError::Invalid)?.try_into().ok().ok_or(PayloadError::Invalid)?);
+    if key_count != 1 {
+        return Err(PayloadError::Invalid);
+    }
+    let (_, rest) = read_ssh_string(&rest[4..]).ok_or(PayloadError::Invalid)?; // public key
+    let (private_section, _) = read_ssh_string(rest).ok_or(PayloadError::Invalid)?;
+
+    let check = u32::from_be_bytes(private_section.get(..4).ok_or(PayloadError::Invalid)?.try_into().ok().ok_or(PayloadError::Invalid)?);
+    let check_repeat = u32::from_be_bytes(private_section.get(4..8).ok_or(PayloadError::Invalid)?.try_into().ok().ok_or(PayloadError::Invalid)?);
+    if check != check_repeat {
+        return Err(PayloadError::Invalid);
+    }
+    let (key_type, rest) = read_ssh_string(&private_section[8..]).ok_or(PayloadError::Invalid)?;
+    if key_type != b"ssh-ed25519" {
+        return Err(PayloadError::Invalid);
+    }
+    let (_public, rest) = read_ssh_string(rest).ok_or(PayloadError::Invalid)?;
+    let (private, _) = read_ssh_string(rest).ok_or(PayloadError::Invalid)?;
+    let seed: [u8; 32] = private
+        .get(..32)
+        .and_then(|seed| seed.try_into().ok())
+        .ok_or(PayloadError::Invalid)?;
+    Ok(seed)
 }

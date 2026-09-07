@@ -298,3 +298,29 @@ Binary size becomes a serious constraint — then evaluate system SQLite on plat
 ---
 
 <!-- Add new ADRs below as decisions are made -->
+### ADR-011: QR payload carries zlib-compressed JSON with a raw Ed25519 seed
+
+**Date:** 2026-09-07
+**Status:** Active
+
+**Decision:**
+The V1 pairing QR value is zlib-compressed JSON bytes (no `timu://` URI prefix, no base64 layer), and `ephemeral_private_key` carries the base64 32-byte Ed25519 seed instead of the full OpenSSH PEM serialization. `timu-pair` extracts the seed from the `ssh-keygen`-generated key (`ed25519_seed_from_openssh_private_key`); the phone reconstructs the OpenSSH keypair from the seed. Decompressed payloads are bounded at 8 KiB. Added the `flate2` crate for zlib.
+
+**Context:**
+The original format (`timu://pair?data=<base64url(JSON)>` with a PEM-embedded key) produced a ~109-module QR — a full terminal screen on a MacBook — because the ~300-char PEM envelope and the base64-in-URL layer roughly tripled the payload. The mobile client does not exist yet, so V1 is amended before any consumer locks it in.
+
+**Options considered:**
+- **Option A (chosen):** seed + compressed bytes in QR.
+- **Option B:** seed only, keep the URL/base64 envelope.
+- **Option C:** keep the PEM, lower QR error correction to L.
+
+**Reasoning:**
+Option A cut the QR from 109 to ~61 modules (~55 to ~31 terminal lines); Option B alone only reached ~81 modules, Option C was marginal. Flate2 is pure-Rust (miniz_oxide) and keeps the CLI dependency-light. The seed is the actual key material (the OpenSSH private field is `seed || public`), so the PEM armor added no security value in transit.
+
+**Tradeoffs accepted:**
+- Phone must implement OpenSSH-keypair reconstruction from the seed (deterministic; checkint and comment are arbitrary).
+- zlib decompression is a trust boundary: bounded at 8 KiB and followed by strict field validation.
+- Test oracle: `timu-pair/tests/fixtures/oracle-ed25519-test-key.pem` is a throwaway keypair whose seed was parsed out-of-band and hard-coded in tests.
+
+**Revisit when:**
+The QR still renders too large on target devices — the next lever is QR error-correction level L (~2 modules) or a shorter payload.

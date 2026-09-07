@@ -32,6 +32,10 @@
       "pattern": "^SHA256:[A-Za-z0-9+/]+={0,2}$"
     },
     "expires_at_unix": { "type": "integer", "minimum": 1 },
-    "ephemeral_private_key": { "type": "string", "minLength": 1 }
+    "ephemeral_private_key": {
+      "type": "string",
+      "description": "Base64 (standard alphabet, padded) of the 32-byte Ed25519 seed for the ephemeral pairing key. The OpenSSH keypair is reconstructed from this seed on the device.",
+      "pattern": "^[A-Za-z0-9+/]{42}[AEIMQUYcgkosw048]=$"
+    }
   }
 }

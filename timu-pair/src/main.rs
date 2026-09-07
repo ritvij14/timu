@@ -11,11 +11,13 @@ use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use qrcode::QrCode;
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD;
 use qrcode::render::unicode;
 use timu_pair::{
     CleanupGuard, CliOptions, CommandOutput, PairingPayload, System, append_authorized_key_line,
-    build_temporary_authorized_key, choose_address, discover_addresses, ensure_ssh_available,
-    host_key_fingerprint, is_expired, pairing_id_from_random_bytes,
+    build_temporary_authorized_key, choose_address, discover_addresses, ed25519_seed_from_openssh_private_key,
+    ensure_ssh_available, host_key_fingerprint, is_expired, pairing_id_from_random_bytes,
     reject_unsafe_authorized_keys_path, replace_temporary_authorized_key_in_file,
     wait_for_completion,
 };
@@ -139,6 +141,8 @@ fn prepare_pairing(
     cleanup.register_authorization(authorized_keys.clone());
     let private_key_text =
         fs::read_to_string(&private_key).map_err(|_| "could not read the pairing key")?;
+    let seed = ed25519_seed_from_openssh_private_key(&private_key_text)
+        .map_err(|e| e.to_string())?;
     let payload = PairingPayload {
         version: 1,
         pairing_id,
@@ -148,7 +152,7 @@ fn prepare_pairing(
         username: username.clone(),
         host_key_fingerprint: fingerprint.clone(),
         expires_at_unix: expires_at,
-        ephemeral_private_key: private_key_text,
+        ephemeral_private_key: STANDARD.encode(seed),
     };
     let qr = payload.encode_for_qr().map_err(|e| e.to_string())?;
     println!("\nPairing address: {username}@{host}:{port}");
@@ -289,14 +293,49 @@ fn run_status(command: &mut Command, action: &str) -> Result<(), String> {
         Err(format!("failed to {action}"))
     }
 }
-fn print_qr(value: &str) -> Result<(), String> {
-    let code = QrCode::new(value).map_err(|e| e.to_string())?;
-    println!(
-        "{}",
-        code.render::<unicode::Dense1x2>()
-            .dark_color(unicode::Dense1x2::Light)
-            .light_color(unicode::Dense1x2::Dark)
-            .build()
-    );
+fn print_qr(value: &[u8]) -> Result<(), String> {
+    println!("{}", render_qr(value)?);
     Ok(())
+}
+
+fn render_qr(value: &[u8]) -> Result<String, String> {
+    let code = QrCode::new(value).map_err(|e| e.to_string())?;
+    Ok(code
+        .render::<unicode::Dense1x2>()
+        .dark_color(unicode::Dense1x2::Light)
+        .light_color(unicode::Dense1x2::Dark)
+        .quiet_zone(false)
+        .build())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rendered_qr_has_no_quiet_zone_border() {
+        let value = b"qr-render-bytes";
+        let modules = QrCode::new(value).unwrap().width();
+        let rendered = render_qr(value).unwrap();
+        // Dense1x2 packs two QR module-rows per terminal line; QR code sides
+        // are always an odd module count.
+        assert_eq!(rendered.lines().count(), modules.div_ceil(2));
+    }
+
+    #[test]
+    fn seed_is_extracted_from_generated_openssh_private_key() {
+        // Ground truth parsed independently from this same PEM out-of-band.
+        let pem =
+            std::fs::read_to_string("tests/fixtures/oracle-ed25519-test-key.pem")
+                .expect("oracle PEM fixture exists");
+        let seed = ed25519_seed_from_openssh_private_key(&pem).expect("seed extracts");
+        assert_eq!(
+            seed,
+            [
+                0x77, 0x7f, 0x13, 0xef, 0x38, 0xdb, 0x1a, 0x94, 0x21, 0xd6, 0xe6, 0xad, 0xf3, 0x86,
+                0x4f, 0xe4, 0x1e, 0x8e, 0x7d, 0xd1, 0xe8, 0xa9, 0xcf, 0xfa, 0x9c, 0xd6, 0x9f, 0x5f,
+                0x07, 0xb8, 0x4d, 0xbf,
+            ]
+        );
+    }
 }

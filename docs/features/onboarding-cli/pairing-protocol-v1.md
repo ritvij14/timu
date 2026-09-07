@@ -15,11 +15,7 @@ The key words **MUST**, **MUST NOT**, **SHOULD**, and **MAY** are normative.
 
 ## 2. QR envelope and payload
 
-The QR value is:
-
-```text
-timu://pair?data=<base64url-no-padding(UTF-8 JSON)>
-```
+The QR value is raw zlib-compressed UTF-8 JSON bytes (RFC 1950). There is no URI prefix or base64 layer; the QR's byte-mode content is the compressed JSON itself.
 
 V1 JSON uses the exact field names below. All fields are required, unknown fields MUST be rejected, and a receiver MUST reject a `version` it does not support.
 
@@ -33,9 +29,9 @@ V1 JSON uses the exact field names below. All fields are required, unknown field
 | `username` | string | Non-empty SSH account name used for temporary and permanent authentication. |
 | `host_key_fingerprint` | string | Expected fingerprint of the target sshd Ed25519 host public key, in OpenSSH SHA-256 display form (`SHA256:<base64>`). Comparison is an exact comparison of the canonical fingerprint value, not a visual similarity check. |
 | `expires_at_unix` | integer | Absolute UTC Unix time in seconds. The payload is expired when `now >= expires_at_unix`. CLI setup sets it to five minutes after creation. |
-| `ephemeral_private_key` | string | Temporary unencrypted OpenSSH Ed25519 private-key serialization used only for this pairing authentication. It MUST be treated as secret payload content. |
+| `ephemeral_private_key` | string | Base64 (standard alphabet, padded) of the 32-byte Ed25519 seed for the temporary pairing key. The device reconstructs the OpenSSH keypair from this seed; the seed MUST be treated as secret payload content. |
 
-The app MUST reject a wrong URI prefix, invalid base64url or JSON, a missing or wrongly typed required field, an empty required string, an invalid port, an unsupported version, or an expired payload before changing local trust or remote authorization. Implementations SHOULD apply reasonable QR and field-size bounds before decoding or allocation.
+The app MUST reject undecompressable or oversized compressed content (V1 bounds decompressed JSON at 8 KiB), invalid JSON, a missing or wrongly typed required field, an empty required string, an invalid port, an unsupported version, or an expired payload before changing local trust or remote authorization. Implementations SHOULD apply reasonable QR and field-size bounds before decoding or allocation.
 
 ## 3. App-facing state and operations
 

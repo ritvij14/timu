@@ -1,3 +1,5 @@
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD;
 use serde_json::Value;
 use timu_pair::{PairingPayload, PayloadError};
 
@@ -10,7 +12,7 @@ const UNSUPPORTED: &str =
 const MALFORMED: &str =
     include_str!("../../docs/features/onboarding-cli/fixtures/malformed-v1.json");
 
-fn qr_from_fixture(fixture: &str) -> String {
+fn qr_from_fixture(fixture: &str) -> Vec<u8> {
     serde_json::from_str::<PairingPayload>(fixture)
         .expect("fixture matches the Rust payload shape")
         .encode_for_qr()
@@ -59,10 +61,12 @@ fn valid_v1_fixture_decodes_with_every_stable_field() {
         "SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
     );
     assert_eq!(payload.expires_at_unix, 1_700_000_300);
-    assert!(
-        payload
-            .ephemeral_private_key
-            .contains("OPENSSH PRIVATE KEY")
+    assert_eq!(
+        STANDARD
+            .decode(&payload.ephemeral_private_key)
+            .expect("ephemeral key is valid base64")
+            .len(),
+        32
     );
 }
 
