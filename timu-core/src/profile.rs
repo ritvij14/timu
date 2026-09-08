@@ -11,20 +11,15 @@ use serde::{Deserialize, Serialize};
 /// Which authentication method the user picked for this machine.
 ///
 /// The method kind only. Secret material is handled out-of-band.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum AuthMethod {
     /// Log in with a password (stored in secure storage, not here).
+    #[default]
     Password,
     /// User pasted a private key into the app.
     KeyPaste,
     /// User imported a private key file from the device.
     KeyFile,
-}
-
-impl Default for AuthMethod {
-    fn default() -> Self {
-        Self::Password
-    }
 }
 
 /// A saved SSH target. Persistable; carries no secrets.
@@ -202,6 +197,9 @@ mod tests {
 
     #[test]
     fn profile_invalid_display_is_human_readable() {
-        assert_eq!(ProfileInvalid::EmptyHost.to_string(), "Hostname or IP is required");
+        assert_eq!(
+            ProfileInvalid::EmptyHost.to_string(),
+            "Hostname or IP is required"
+        );
     }
 }

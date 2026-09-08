@@ -310,6 +310,24 @@ Expected behavior:
 * tmux session keeps running on server
 * user can resume from session list
 
+### 13.1 Background connectivity model (decided)
+
+* A persistent SSH connection exists only while the app is foregrounded. A closed or suspended mobile app cannot hold a connection — the OS suspends the process. The engine must assume the connection dies on backgrounding and heals on resume: instant reconnect plus full catch-up from tmux. Nothing lost, delivery delayed.
+* V0 has no closed-app notifications. Catch-up-on-reopen is the V0 behavior.
+* Live streaming (persistent connection → event stream → FFI push) is core work, not an enhancement: the app subscribes to events rather than polling.
+
+### 13.2 Notifications (post-V0, good-to-have)
+
+Decided architecture, parked until the mobile client exists:
+
+* **Android:** a foreground service (permanent notification) may hold the connection while backgrounded. No server involved.
+* **iOS:** a closed app can only be woken by Apple's push service (APNs), which requires the publisher credential. That credential cannot be shipped to users' machines.
+* **Dumb ping service (opt-in):** a timu-operated, stateless forwarder. The user's machine relay (installed by `npx timu-app`, woken by tmux hooks) sends a contentless "ring device token" message; the service stamps it with the single publisher credential and forwards through APNs/FCM. It transports *events, never content* — no output, no code, no previews cross timu's servers or Apple's pipes.
+* **Trust model:** the device token (Apple-issued per-phone address) identifies which phone; the permanent SSH key proves machine ownership; the publisher credential authorizes ringing. Registration happens only through the pairing-authenticated channel; unpair revokes.
+* **Notification previews:** if built, enriched on-device — the app wakes, connects directly to the machine, fetches the preview itself, and rewrites the notification. The ping service and APNs stay contentless end to end.
+* **Guarantee boundary:** notifications are hints, never the record. tmux + catch-up remains the actual guarantee; a missed ping loses nothing.
+* Residual risks (activity metadata, relay attack surface, abuse/rate-limiting, operational trust in timu) must be documented in the threat model if implemented.
+
 ## 14. Security and Privacy
 
 V0 should be local-first.

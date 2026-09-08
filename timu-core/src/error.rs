@@ -26,6 +26,9 @@ pub enum TimuError {
     /// Auth material is valid but the account is not permitted to log in
     /// (e.g. `AllowUsers` restriction, root login disabled).
     PermissionDenied,
+    /// tmux is not installed on the target machine. Distinct corrective action:
+    /// the UI offers a copyable install command (PRD §8).
+    TmuxMissing,
     /// Anything not covered above. Carries a short diagnostic string for logs.
     /// Never shown verbatim to the user as the primary message.
     Other(String),
@@ -42,6 +45,7 @@ impl TimuError {
             Self::PortUnreachable => "port_unreachable",
             Self::NetworkUnavailable => "network_unavailable",
             Self::PermissionDenied => "permission_denied",
+            Self::TmuxMissing => "tmux_missing",
             Self::Other(_) => "other",
         }
     }
@@ -55,6 +59,7 @@ impl TimuError {
             Self::PortUnreachable => "That port isn't reachable",
             Self::NetworkUnavailable => "No network connection",
             Self::PermissionDenied => "Not allowed to log in",
+            Self::TmuxMissing => "tmux isn't installed on that machine",
             Self::Other(_) => "Something went wrong",
         }
     }
@@ -86,17 +91,22 @@ mod tests {
             TimuError::PortUnreachable.code(),
             TimuError::NetworkUnavailable.code(),
             TimuError::PermissionDenied.code(),
+            TimuError::TmuxMissing.code(),
             TimuError::Other("boom".into()).code(),
         ];
-        assert_eq!(codes, [
-            "wrong_host",
-            "wrong_username",
-            "wrong_credentials",
-            "port_unreachable",
-            "network_unavailable",
-            "permission_denied",
-            "other",
-        ]);
+        assert_eq!(
+            codes,
+            [
+                "wrong_host",
+                "wrong_username",
+                "wrong_credentials",
+                "port_unreachable",
+                "network_unavailable",
+                "permission_denied",
+                "tmux_missing",
+                "other",
+            ]
+        );
         // No two variants share a code.
         let mut sorted = codes.to_vec();
         sorted.sort_unstable();
@@ -113,6 +123,7 @@ mod tests {
             TimuError::PortUnreachable,
             TimuError::NetworkUnavailable,
             TimuError::PermissionDenied,
+            TimuError::TmuxMissing,
         ] {
             assert!(!err.user_label().is_empty(), "{:?} has empty label", err);
         }
@@ -136,14 +147,8 @@ mod tests {
 
     #[test]
     fn equality_compares_other_by_carried_message() {
-        assert_eq!(
-            TimuError::Other("x".into()),
-            TimuError::Other("x".into())
-        );
-        assert_ne!(
-            TimuError::Other("x".into()),
-            TimuError::Other("y".into())
-        );
+        assert_eq!(TimuError::Other("x".into()), TimuError::Other("x".into()));
+        assert_ne!(TimuError::Other("x".into()), TimuError::Other("y".into()));
         assert_eq!(TimuError::WrongHost, TimuError::WrongHost);
     }
 }

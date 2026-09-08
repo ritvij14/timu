@@ -7,7 +7,8 @@
 //! `async-trait` dependency; `TimuCore` will be parameterized over `T:
 //! SshTransport` (real = `RusshSshTransport`, tests = [`FakeSshTransport`]).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
+use std::sync::Mutex;
 
 use crate::error::TimuError;
 
@@ -48,9 +49,13 @@ pub trait SshTransport: Send + Sync {
 /// In-memory, scriptable transport for tests. Panics-free: looks up the exact
 /// command in its script table; unscripted commands return [`TimuError::Other`]
 /// so tests fail loudly on unexpected probes rather than silently passing.
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default)]
 pub struct FakeSshTransport {
     scripts: HashMap<String, Result<CommandOutput, TimuError>>,
+    /// Sequential outputs for commands whose response changes over time
+    /// (e.g. successive pane captures in the streaming watcher). Plays in
+    /// order, then sticks on the last output.
+    sequences: Mutex<HashMap<String, VecDeque<CommandOutput>>>,
 }
 
 impl FakeSshTransport {
@@ -73,10 +78,30 @@ impl FakeSshTransport {
     pub fn script_error(&mut self, command: impl Into<String>, error: TimuError) {
         self.scripts.insert(command.into(), Err(error));
     }
+
+    /// Script a command to return successive outputs on consecutive calls;
+    /// after the list is exhausted, the last output repeats.
+    pub fn script_sequence(&mut self, command: impl Into<String>, outputs: Vec<CommandOutput>) {
+        self.sequences
+            .lock()
+            .expect("fake sequence mutex")
+            .insert(command.into(), outputs.into());
+    }
 }
 
 impl SshTransport for FakeSshTransport {
     async fn run_command(&self, command: &str) -> Result<CommandOutput, TimuError> {
+        if let Some(queue) = self
+            .sequences
+            .lock()
+            .expect("fake sequence mutex")
+            .get_mut(command)
+        {
+            if queue.len() > 1 {
+                return Ok(queue.pop_front().expect("non-empty queue"));
+            }
+            return Ok(queue.front().expect("non-empty queue").clone());
+        }
         match self.scripts.get(command) {
             Some(result) => result.clone(),
             None => Err(TimuError::Other(format!(
@@ -115,6 +140,20 @@ mod tests {
         let err = fake.run_command("nope").await.expect_err("should fail");
         assert_eq!(err.code(), "other");
         assert!(err.to_string().contains("unscripted"));
+    }
+
+    #[tokio::test]
+    async fn scripted_sequence_plays_outputs_in_order_then_sticks_on_the_last() {
+        let mut fake = FakeSshTransport::new();
+        fake.script_sequence(
+            "poll",
+            vec![CommandOutput::success("one"), CommandOutput::success("two")],
+        );
+
+        assert_eq!(fake.run_command("poll").await.unwrap().stdout, "one");
+        assert_eq!(fake.run_command("poll").await.unwrap().stdout, "two");
+        assert_eq!(fake.run_command("poll").await.unwrap().stdout, "two");
+        assert_eq!(fake.run_command("poll").await.unwrap().stdout, "two");
     }
 
     #[tokio::test]

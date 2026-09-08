@@ -13,8 +13,8 @@
 use std::sync::Arc;
 
 use russh::client::{self, Config, Handle, Handler, Msg};
+use russh::keys::{HashAlg, PrivateKeyWithHashAlg, decode_secret_key};
 use russh::{Channel, ChannelMsg};
-use russh::keys::{decode_secret_key, HashAlg, PrivateKeyWithHashAlg};
 use tokio::sync::Mutex;
 
 use crate::credentials::Credentials;
@@ -45,11 +45,7 @@ impl Handler for HostKeyHandler {
         &mut self,
         server_public_key: &russh::keys::ssh_key::PublicKey,
     ) -> Result<bool, Self::Error> {
-        let fp = Fingerprint::new(
-            server_public_key
-                .fingerprint(HashAlg::Sha256)
-                .to_string(),
-        );
+        let fp = Fingerprint::new(server_public_key.fingerprint(HashAlg::Sha256).to_string());
         let verdict = self.pins.lock().await.verify(&self.host, &fp);
         match verdict {
             HostKeyVerdict::FirstSeen => {
@@ -93,12 +89,15 @@ impl RusshSshTransport {
             .map_err(map_connect_error)?;
 
         let auth_ok = match creds {
-            Credentials::Password(pw) => {
-                handle.authenticate_password(&profile.username, pw).await
-            }
-            Credentials::PrivateKey { material, passphrase } => {
+            Credentials::Password(pw) => handle.authenticate_password(&profile.username, pw).await,
+            Credentials::PrivateKey {
+                material,
+                passphrase,
+            } => {
                 let with_alg = load_key(material, passphrase.as_deref())?;
-                handle.authenticate_publickey(&profile.username, with_alg).await
+                handle
+                    .authenticate_publickey(&profile.username, with_alg)
+                    .await
             }
         };
 
@@ -152,10 +151,8 @@ impl SshTransport for RusshSshTransport {
         while let Some(msg) = channel.wait().await {
             match msg {
                 ChannelMsg::Data { data } => stdout.extend_from_slice(&data),
-                ChannelMsg::ExtendedData { data, ext } => {
-                    if ext == SSH_EXTENDED_DATA_STDERR {
-                        stderr.extend_from_slice(&data);
-                    }
+                ChannelMsg::ExtendedData { data, ext } if ext == SSH_EXTENDED_DATA_STDERR => {
+                    stderr.extend_from_slice(&data);
                 }
                 ChannelMsg::ExitStatus { exit_status } => {
                     exit_code = exit_status as i32;
@@ -211,7 +208,10 @@ fn map_connect_error(e: russh::Error) -> TimuError {
 fn load_key(material: &[u8], passphrase: Option<&str>) -> Result<PrivateKeyWithHashAlg, TimuError> {
     let key_str = std::str::from_utf8(material).map_err(|_| TimuError::WrongCredentials)?;
     let key = decode_secret_key(key_str, passphrase).map_err(|_| TimuError::WrongCredentials)?;
-    Ok(PrivateKeyWithHashAlg::new(Arc::new(key), Some(HashAlg::Sha256)))
+    Ok(PrivateKeyWithHashAlg::new(
+        Arc::new(key),
+        Some(HashAlg::Sha256),
+    ))
 }
 
 #[cfg(test)]
@@ -247,11 +247,26 @@ mod tests {
         // Construct via a representative IO-ish error string path. We can't
         // easily build a russh::Error variant, so exercise the heuristic
         // through a string-only mirror to keep the test honest.
-        assert_eq!(classify_str("Connection refused by host"), TimuError::PortUnreachable);
-        assert_eq!(classify_str("Name or service not known"), TimuError::WrongHost);
-        assert_eq!(classify_str("Network is unreachable"), TimuError::NetworkUnavailable);
-        assert_eq!(classify_str("Permission denied (publickey)"), TimuError::PermissionDenied);
-        assert_eq!(classify_str("something weird"), TimuError::Other("something weird".into()));
+        assert_eq!(
+            classify_str("Connection refused by host"),
+            TimuError::PortUnreachable
+        );
+        assert_eq!(
+            classify_str("Name or service not known"),
+            TimuError::WrongHost
+        );
+        assert_eq!(
+            classify_str("Network is unreachable"),
+            TimuError::NetworkUnavailable
+        );
+        assert_eq!(
+            classify_str("Permission denied (publickey)"),
+            TimuError::PermissionDenied
+        );
+        assert_eq!(
+            classify_str("something weird"),
+            TimuError::Other("something weird".into())
+        );
     }
 
     /// String-only mirror of [`map_connect_error`] so the classification logic
@@ -291,7 +306,9 @@ mod tests {
         let host = std::env::var("TIMU_TEST_SSH_HOST").expect("TIMU_TEST_SSH_HOST");
         let user = std::env::var("TIMU_TEST_SSH_USER").expect("TIMU_TEST_SSH_USER");
         let port: u16 = std::env::var("TIMU_TEST_SSH_PORT")
-            .ok().and_then(|p| p.parse().ok()).unwrap_or(22);
+            .ok()
+            .and_then(|p| p.parse().ok())
+            .unwrap_or(22);
 
         let profile = MachineProfile {
             name: "live-test".into(),

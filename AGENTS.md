@@ -273,7 +273,7 @@ tests need a target, point the app at your own VPS / `localhost` sshd.
 
 | Feature        | Doc                                                            | Status                    |
 | -------------- | -------------------------------------------------------------- | ------------------------- |
-| timu-core (Rust engine) | [docs/features/timu-core.md](docs/features/timu-core.md) | WIP — error/profile/credentials/host-key/readiness/ssh+russh/connection/folder/store landed (tasks 1–10); tmux engine + secrets bridge + FFI pending |
+| timu-core (Rust engine) | [docs/features/timu-core.md](docs/features/timu-core.md) | WIP — error/profile/credentials/host-key/readiness/ssh+russh/connection/folder/store/tmux-engine/live-pane-streaming landed (tasks 1–12); secrets bridge + FFI pending |
 | onboarding CLI | [docs/features/onboarding-cli.md](docs/features/onboarding-cli.md) | WIP — `npx timu-app` permanent-key pairing CLI, protocol docs, threat model, and physical-iOS acceptance checklist |
 
 > **Living section:** Add a row the moment a new feature doc is created. Update the Status column as features evolve. Never leave a feature undocumented.
