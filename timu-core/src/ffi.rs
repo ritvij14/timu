@@ -22,11 +22,14 @@ use crate::RusshSshTransport;
 use crate::connection::ConnectionTestResult;
 use crate::credentials::Credentials;
 use crate::error::TimuError;
+use crate::folder::FolderEntry;
+use crate::host_key::{Fingerprint, HostKeyPins};
 use crate::pane_stream::{PaneEvent, PaneWatcher};
 use crate::profile::MachineProfile;
 use crate::readiness::ReadinessReport;
 use crate::readiness_probe::run_readiness_probe;
 use crate::ssh::SshTransport;
+use crate::store::{ProfileRecord, SessionRecord};
 use crate::timu_core::TimuCore;
 use crate::tmux::{self, StartedSession};
 
@@ -93,6 +96,19 @@ impl BridgeTransport {
     }
 }
 
+/// One persisted host-key pin (host → fingerprint) as stored in SQLite.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct HostKeyPin {
+    pub host: String,
+    pub fingerprint: String,
+}
+
+/// SQLite failures are not per-variant actionable (no different corrective
+/// action than "something's wrong with local storage") — fold into `Other`.
+fn map_store_error(error: rusqlite::Error) -> TimuError {
+    TimuError::Other(format!("store error: {error}"))
+}
+
 /// App-facing core: connection test (PRD §6) + live connections (PRD §11).
 #[derive(uniffi::Object)]
 pub struct FfiCore {
@@ -106,6 +122,38 @@ impl FfiCore {
         Arc::new(Self {
             inner: Arc::new(TimuCore::new()),
         })
+    }
+
+    /// App boot: inject pins loaded from the SQLite store so the first
+    /// connect verifies against existing pins instead of re-running TOFU.
+    pub async fn load_pins(&self, pins: Vec<HostKeyPin>) {
+        let mut map = std::collections::HashMap::new();
+        for pin in pins {
+            map.insert(pin.host, Fingerprint::new(pin.fingerprint));
+        }
+        let core = self.inner.clone();
+        runtime_handle()
+            .spawn(async move {
+                core.set_host_key_pins(HostKeyPins::from_map(map)).await;
+            })
+            .await
+            .expect("timu-core runtime task");
+    }
+
+    /// Current in-memory pins, for persisting new ones after a connect.
+    pub async fn pins(&self) -> Vec<HostKeyPin> {
+        let core = self.inner.clone();
+        let pins = runtime_handle()
+            .spawn(async move { core.host_key_pins().await })
+            .await
+            .expect("timu-core runtime task");
+        pins.to_map()
+            .iter()
+            .map(|(host, fingerprint)| HostKeyPin {
+                host: host.clone(),
+                fingerprint: fingerprint.as_str().to_string(),
+            })
+            .collect()
     }
 
     pub async fn test_connection(
@@ -266,6 +314,147 @@ impl Connection {
     }
 }
 
+/// SQLite-backed persistent state (PRD §13): machine profiles, sessions,
+/// recent/favorite folders, host-key pins. Holds no secrets (ADR-009).
+/// rusqlite's connection is not `Sync`, so calls lock the single store.
+#[derive(uniffi::Object)]
+pub struct Store {
+    inner: std::sync::Mutex<crate::store::Store>,
+}
+
+#[uniffi::export]
+impl Store {
+    #[uniffi::constructor]
+    pub fn open(path: String) -> Result<Arc<Self>, TimuError> {
+        let store =
+            crate::store::Store::open(std::path::Path::new(&path)).map_err(map_store_error)?;
+        Ok(Arc::new(Self {
+            inner: Mutex::new(store),
+        }))
+    }
+
+    pub fn save_profile(&self, profile: MachineProfile) -> Result<i64, TimuError> {
+        self.inner
+            .lock()
+            .expect("store mutex")
+            .save_profile(&profile)
+            .map_err(map_store_error)
+    }
+
+    pub fn list_profiles(&self) -> Result<Vec<ProfileRecord>, TimuError> {
+        self.inner
+            .lock()
+            .expect("store mutex")
+            .list_profiles()
+            .map_err(map_store_error)
+    }
+
+    pub fn get_profile(&self, id: i64) -> Result<Option<ProfileRecord>, TimuError> {
+        self.inner
+            .lock()
+            .expect("store mutex")
+            .get_profile(id)
+            .map_err(map_store_error)
+    }
+
+    pub fn delete_profile(&self, id: i64) -> Result<bool, TimuError> {
+        self.inner
+            .lock()
+            .expect("store mutex")
+            .delete_profile(id)
+            .map_err(map_store_error)
+    }
+
+    pub fn touch_profile(&self, id: i64) -> Result<(), TimuError> {
+        self.inner
+            .lock()
+            .expect("store mutex")
+            .touch_profile(id)
+            .map_err(map_store_error)
+    }
+
+    pub fn save_session(&self, session: SessionRecord) -> Result<i64, TimuError> {
+        self.inner
+            .lock()
+            .expect("store mutex")
+            .save_session(&session)
+            .map_err(map_store_error)
+    }
+
+    pub fn list_sessions(&self, profile_id: i64) -> Result<Vec<SessionRecord>, TimuError> {
+        self.inner
+            .lock()
+            .expect("store mutex")
+            .list_sessions(profile_id)
+            .map_err(map_store_error)
+    }
+
+    pub fn add_recent_folder(&self, entry: FolderEntry) -> Result<(), TimuError> {
+        self.inner
+            .lock()
+            .expect("store mutex")
+            .add_recent_folder(&entry)
+            .map_err(map_store_error)
+    }
+
+    pub fn list_recent_folders(&self) -> Result<Vec<FolderEntry>, TimuError> {
+        self.inner
+            .lock()
+            .expect("store mutex")
+            .list_recent_folders()
+            .map_err(map_store_error)
+    }
+
+    pub fn add_favorite(&self, entry: FolderEntry) -> Result<(), TimuError> {
+        self.inner
+            .lock()
+            .expect("store mutex")
+            .add_favorite(&entry)
+            .map_err(map_store_error)
+    }
+
+    pub fn list_favorites(&self) -> Result<Vec<FolderEntry>, TimuError> {
+        self.inner
+            .lock()
+            .expect("store mutex")
+            .list_favorites()
+            .map_err(map_store_error)
+    }
+
+    pub fn remove_favorite(&self, path: String) -> Result<bool, TimuError> {
+        self.inner
+            .lock()
+            .expect("store mutex")
+            .remove_favorite(&path)
+            .map_err(map_store_error)
+    }
+
+    pub fn save_host_key_pin(&self, host: String, fingerprint: String) -> Result<(), TimuError> {
+        self.inner
+            .lock()
+            .expect("store mutex")
+            .save_host_key_pin(&host, &Fingerprint::new(fingerprint))
+            .map_err(map_store_error)
+    }
+
+    pub fn load_host_key_pins(&self) -> Result<Vec<HostKeyPin>, TimuError> {
+        let pins = self
+            .inner
+            .lock()
+            .expect("store mutex")
+            .load_host_key_pins()
+            .map_err(map_store_error)?;
+        Ok(pins
+            .to_map()
+            .iter()
+            .map(|(host, fingerprint)| HostKeyPin {
+                host: host.clone(),
+                fingerprint: fingerprint.as_str().to_string(),
+            })
+            .collect())
+    }
+}
+
 #[cfg(test)]
 impl Connection {
     pub(crate) fn for_test(fake: crate::ssh::FakeSshTransport) -> Self {
@@ -296,7 +485,9 @@ impl PaneStreamHandle {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::folder::FolderEntry;
     use crate::pane_stream::build_capture_pane_full_command;
+    use crate::profile::AuthMethod;
     use crate::readiness::Tool;
     use crate::readiness_probe::build_probe_command;
     use crate::ssh::{CommandOutput, FakeSshTransport};
@@ -587,5 +778,189 @@ mod tests {
             after_stop,
             "no further events after stop"
         );
+    }
+
+    fn temp_store_path(name: &str) -> String {
+        let dir =
+            std::env::temp_dir().join(format!("timu-ffi-store-{}-{}", std::process::id(), name));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        dir.join("store.db").to_string_lossy().to_string()
+    }
+
+    #[test]
+    fn store_save_and_get_profile_round_trips() {
+        let store = Store::open(temp_store_path("profiles")).expect("store opens");
+        let mut profile = MachineProfile {
+            name: "my-vps".to_string(),
+            host: "203.0.113.7".to_string(),
+            username: "dev".to_string(),
+            port: 2200,
+            auth_method: AuthMethod::KeyPaste,
+        };
+        let id = store.save_profile(profile.clone()).expect("saved");
+        profile.name = "renamed".to_string(); // saved value is a copy, not a reference
+
+        let loaded = store.get_profile(id).expect("get").expect("exists");
+        assert_eq!(loaded.name, "my-vps");
+        assert_eq!(loaded.host, "203.0.113.7");
+        assert_eq!(loaded.username, "dev");
+        assert_eq!(loaded.port, 2200);
+        assert_eq!(loaded.auth_method, AuthMethod::KeyPaste);
+    }
+
+    #[test]
+    fn store_missing_profile_reads_none() {
+        let store = Store::open(temp_store_path("missing")).expect("store opens");
+        assert!(store.get_profile(999).expect("get").is_none());
+    }
+
+    #[test]
+    fn store_list_and_delete_profile() {
+        let store = Store::open(temp_store_path("list-delete")).expect("store opens");
+        let first = store
+            .save_profile(MachineProfile::default())
+            .expect("saved");
+        let second = store
+            .save_profile(MachineProfile::default())
+            .expect("saved");
+        assert_ne!(first, second);
+        assert_eq!(store.list_profiles().expect("list").len(), 2);
+        assert!(store.delete_profile(first).expect("delete"));
+        assert!(!store.delete_profile(first).expect("delete again"));
+        assert_eq!(store.list_profiles().expect("list").len(), 1);
+    }
+
+    #[test]
+    fn store_touch_profile_succeeds() {
+        let store = Store::open(temp_store_path("touch")).expect("store opens");
+        let id = store
+            .save_profile(MachineProfile::default())
+            .expect("saved");
+        store.touch_profile(id).expect("touch");
+    }
+
+    #[test]
+    fn store_save_session_inserts_then_updates_in_place() {
+        let store = Store::open(temp_store_path("sessions")).expect("store opens");
+        let profile_id = store
+            .save_profile(MachineProfile::default())
+            .expect("profile saved");
+        let session = SessionRecord {
+            id: 0,
+            profile_id,
+            agent: "codex".to_string(),
+            folder: "/home/me/proj".to_string(),
+            tmux_session_id: "proj-abc".to_string(),
+            status: "active".to_string(),
+        };
+        let id = store.save_session(session.clone()).expect("inserted");
+        assert!(id > 0);
+
+        let updated = SessionRecord {
+            id,
+            status: "closed".to_string(),
+            ..session
+        };
+        let again = store.save_session(updated).expect("updated");
+        assert_eq!(again, id, "update must not insert a second row");
+
+        let rows = store.list_sessions(profile_id).expect("list");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].status, "closed");
+        assert_eq!(rows[0].tmux_session_id, "proj-abc");
+    }
+
+    #[test]
+    fn store_recent_folders_order_by_last_use_and_favorites_round_trip() {
+        let store = Store::open(temp_store_path("folders")).expect("store opens");
+        let entry = |path: &str| FolderEntry {
+            path: path.to_string(),
+            name: path.rsplit('/').next().unwrap().to_string(),
+            is_git_repo: true,
+        };
+        store.add_recent_folder(entry("/home/a")).expect("add");
+        store.add_recent_folder(entry("/home/b")).expect("add");
+        store
+            .add_recent_folder(entry("/home/a"))
+            .expect("re-add bumps a");
+
+        let recents = store.list_recent_folders().expect("list");
+        assert_eq!(recents.len(), 2);
+        assert_eq!(recents[0].path, "/home/a", "most recently used first");
+
+        store.add_favorite(entry("/home/b")).expect("favorite");
+        assert_eq!(store.list_favorites().expect("list").len(), 1);
+        assert!(
+            store
+                .remove_favorite("/home/b".to_string())
+                .expect("remove")
+        );
+        assert!(
+            !store
+                .remove_favorite("/home/b".to_string())
+                .expect("remove again")
+        );
+        assert!(store.list_favorites().expect("list").is_empty());
+    }
+
+    #[test]
+    fn store_host_key_pins_round_trip() {
+        let store = Store::open(temp_store_path("pins")).expect("store opens");
+        store
+            .save_host_key_pin("my-vps".to_string(), "SHA256:abc".to_string())
+            .expect("saved");
+        let pins = store.load_host_key_pins().expect("loaded");
+        assert_eq!(
+            pins,
+            vec![HostKeyPin {
+                host: "my-vps".to_string(),
+                fingerprint: "SHA256:abc".to_string(),
+            }]
+        );
+    }
+
+    #[tokio::test]
+    async fn ffi_core_pins_round_trip_through_the_store() {
+        let store = Store::open(temp_store_path("pin-inject")).expect("store opens");
+        store
+            .save_host_key_pin("my-vps".to_string(), "SHA256:abc".to_string())
+            .expect("saved");
+
+        let core = FfiCore::new();
+        core.load_pins(store.load_host_key_pins().expect("loaded"))
+            .await;
+        assert_eq!(
+            core.pins().await,
+            vec![HostKeyPin {
+                host: "my-vps".to_string(),
+                fingerprint: "SHA256:abc".to_string(),
+            }]
+        );
+    }
+
+    #[test]
+    fn store_open_failure_maps_to_typed_error() {
+        // Arc<Store> isn't Debug, so match instead of expect_err.
+        match Store::open("/nonexistent-timu-dir/nope/timu.db".to_string()) {
+            Err(err) => assert_eq!(err.code(), "other"),
+            Ok(_) => panic!("bad path must fail"),
+        }
+    }
+
+    #[test]
+    fn store_persisted_profile_survives_reopening_the_database() {
+        let path = temp_store_path("reopen");
+        let id = {
+            let store = Store::open(path.clone()).expect("first open");
+            store
+                .save_profile(MachineProfile {
+                    name: "vps".to_string(),
+                    ..MachineProfile::default()
+                })
+                .expect("saved")
+        };
+        let store = Store::open(path).expect("second open");
+        let loaded = store.get_profile(id).expect("get").expect("exists");
+        assert_eq!(loaded.name, "vps");
     }
 }

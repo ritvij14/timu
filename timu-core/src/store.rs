@@ -18,6 +18,7 @@ use crate::profile::AuthMethod;
 
 /// A persisted machine profile with its row id.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
 pub struct ProfileRecord {
     pub id: i64,
     pub name: String,
@@ -29,6 +30,7 @@ pub struct ProfileRecord {
 
 /// A persisted coding session (one row per tmux-backed agent session).
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
 pub struct SessionRecord {
     pub id: i64,
     pub profile_id: i64,

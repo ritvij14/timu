@@ -17,6 +17,7 @@ use crate::ssh::SshTransport;
 
 /// One row in the folder picker.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
 pub struct FolderEntry {
     /// Full path of the directory, no trailing slash (e.g. `/home/u/projects/foo`).
     pub path: String,

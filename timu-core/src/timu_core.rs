@@ -29,6 +29,13 @@ impl TimuCore {
         self.host_key_pins.lock().await.clone()
     }
 
+    /// Replace the in-memory pins with `pins` — app boot loads them from the
+    /// SQLite store and injects them so the first connect verifies against
+    /// existing pins instead of re-running TOFU (PRD §14 / Hard Block §2.2).
+    pub async fn set_host_key_pins(&self, pins: HostKeyPins) {
+        *self.host_key_pins.lock().await = pins;
+    }
+
     /// PRD §6 — test that we can connect + authenticate to `profile`.
     #[cfg(not(target_arch = "wasm32"))]
     pub async fn test_connection(
@@ -77,6 +84,17 @@ mod tests {
         let core = TimuCore::new();
         let pins = core.host_key_pins().await;
         assert!(!pins.is_pinned("any-host"));
+    }
+
+    #[tokio::test]
+    async fn set_host_key_pins_loads_persisted_pins() {
+        // App boot: load pins from the SQLite store, then inject them so the
+        // first connect verifies against them instead of doing TOFU again.
+        let core = TimuCore::new();
+        let mut pins = crate::host_key::HostKeyPins::new();
+        pins.pin("my-vps", crate::host_key::Fingerprint::new("SHA256:abc"));
+        core.set_host_key_pins(pins).await;
+        assert!(core.host_key_pins().await.is_pinned("my-vps"));
     }
 
     #[test]

@@ -41,7 +41,7 @@ Rust is the wire between them.**
 | `src/folder.rs` | `FolderEntry`, shell-based folder listing + `shell_quote` | landed |
 | `src/store.rs` | SQLite store: profiles, sessions, recent/favorites, host-key pins | landed (FFI wiring planned) |
 | `src/secrets.rs` | platform secure-storage bridge | planned |
-| `src/ffi.rs` | UniFFI bridge: `FfiCore`/`Connection`/`PaneStreamHandle` + `PaneEventSink` callback (ADR-012) | landed (behind `ffi` feature) |
+| `src/ffi.rs` | UniFFI bridge: `FfiCore`/`Connection`/`Store`/`PaneStreamHandle` + `PaneEventSink` callback (ADR-012) | landed (behind `ffi` feature) |
 | `src/tmux.rs` | tmux session lifecycle + chat send/capture | landed |
 | `src/pane_stream.rs` | live pane streaming: snapshot-diff watcher → `PaneEvent`s | landed (see §6) |
 
@@ -141,6 +141,15 @@ spawns one ordered task over `run()`: forwards events as they arrive, drains
 buffered events before calling `sink.on_error`, and `PaneStreamHandle::stop()`
 aborts the watcher (buffered events still deliver).
 
+**FFI persistence (PRD §13):** `Store::open(path)` wraps the SQLite store
+(rusqlite connection isn't `Sync`, calls lock it). Profiles CRUD, sessions
+save/update/list, recent/favorite folders, and host-key pin save/load are
+exposed sync (fast local SQLite); storage failures fold into
+`TimuError::Other`. `FfiCore::load_pins(pins)` injects persisted pins at boot
+(`TimuCore::set_host_key_pins`) so the first connect verifies against them
+instead of re-running TOFU; `FfiCore::pins()` dumps current pins for
+persisting new ones after a connect.
+
 ---
 
 ## 7. Testing
@@ -152,7 +161,7 @@ aborts the watcher (buffered events still deliver).
   cross-crate integration. TDD mandatory (ADR-006).
 - **Boundary mock:** `FakeSshTransport` is the only SSH mock. Never mock domain
   types or the store.
-- **Currently covered (128 tests core / 143 with `--features ffi`, 1
+- **Currently covered (129 tests core / 154 with `--features ffi`, 1
   `#[ignore]` live):** error codes/labels,
   profile validation + serde + no-secrets, readiness render/order + tmux
   predicate + serde, probe command + parser edge cases, ssh trait + fake +
@@ -170,7 +179,11 @@ aborts the watcher (buffered events still deliver).
   conversion, `Connection` flows over a fake transport (readiness, session
   start/reuse/missing-tmux, chat send, capture, list, kill), pane streaming
   over the callback sink (history → append → session-ended, transport errors
-  surface via `on_error`, `stop()` cancels further events).
+  surface via `on_error`, `stop()` cancels further events), FFI store
+  (profile round-trip + missing reads none + list/delete, session insert/
+  update-in-place under the profile foreign key, recent-folder ordering +
+  favorites, pin save/load, pins round-trip into `FfiCore`, open-failure
+  error mapping, database persistence across reopen).
 - **Explicitly not tested by CI:** live SSH connect against a real sshd
   (`ssh_russh::live_connect_and_run_command`, `#[ignore]`; set
   `TIMU_TEST_SSH_HOST`/`_USER`/`_PASS` or `_KEY`/`_KEYPASS` to run).
