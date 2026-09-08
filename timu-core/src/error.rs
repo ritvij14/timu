@@ -12,6 +12,7 @@ use std::fmt;
 /// Distinct variants exist only where the user can take a *different* corrective
 /// action. Anything not actionable gets folded into [`TimuError::Other`].
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Error))]
 pub enum TimuError {
     /// The hostname/IP does not resolve or does not point at an SSH server.
     WrongHost,

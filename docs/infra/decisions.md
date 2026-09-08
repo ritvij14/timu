@@ -324,3 +324,30 @@ Option A cut the QR from 109 to ~61 modules (~55 to ~31 terminal lines); Option 
 
 **Revisit when:**
 The QR still renders too large on target devices — the next lever is QR error-correction level L (~2 modules) or a shorter payload.
+
+---
+
+### ADR-012: UniFFI bridge lives inside timu-core behind the `ffi` feature
+
+**Date:** 2026-09-08
+**Status:** Active
+
+**Decision:**
+The FFI surface lives in `timu-core/src/ffi.rs`, enabled by the `ffi` cargo feature (`uniffi = ["dep:uniffi"]`, uniffi 0.32, proc-macro mode). Core types gain `#[cfg_attr(feature = "ffi", derive(uniffi::...))]` derives — `timu-core` builds and tests unchanged without the feature. A `uniffi-bindgen` bin (feature `uniffi-cli`) generates Swift/Kotlin bindings; the lib builds as `lib + cdylib + staticlib` for mobile linking.
+
+**Context:**
+The Expo app needs to drive SSH/tmux over FFI. UniFFI cannot export generics or native async-fn-in-traits, so the bridge needs concrete types and its own task wiring. A separate bindings crate was considered and rejected — one consumer, one workspace.
+
+**Key mechanics:**
+- Exported objects: `FfiCore` (wraps `TimuCore`; `test_connection`, `connect`), `Connection` (readiness, tmux session lifecycle, chat, streaming, disconnect), `PaneStreamHandle` (`stop`). Callback interface: `PaneEventSink` (`on_event`, `on_error`) — declared **before** the impls that use it; uniffi macros expand in source order. Callback parameters cross as `Box<dyn Trait>`.
+- `BridgeTransport` enum dispatches `SshTransport` to the real russh transport (the fake variant is `#[cfg(test)]`) — FFI can't do generics.
+- Every exported async method body hops to a timu-core-owned tokio runtime via `runtime_handle()` (prefers an ambient context, e.g. `#[tokio::test]`): foreign threads have no tokio context and russh panics without one. No `async_runtime` attribute needed — russh futures are never polled on the foreign thread.
+- `start_pane_stream` spawns a single ordered task: forwards `PaneEvent`s as they arrive, drains buffered events before calling `on_error`, so the sink never sees a failure ahead of earlier events. `stop()` aborts the watcher; buffered events still deliver.
+- FFI-facing `ConnectionTestOutcome` (fingerprint as `Option<String>`) keeps `host_key.rs`/`connection.rs` untouched; `ReadinessReport` is exported as an uniffi **Object** (its `HashMap<Tool, ToolStatus>` field can't be a Record field).
+
+**Tradeoffs accepted:**
+- `uniffi` + scaffolding compile into every `--features ffi` build (mobile); `cli` bloat is confined to `uniffi-cli`.
+- `FfiCore` is a thin duplicate of `TimuCore`'s two entry points — name collision with the core method would otherwise break the export.
+
+**Revisit when:**
+timu-app wires the Expo native module — if the Swift/Kotlin wrapper needs a different object split, this layer is the only change surface.

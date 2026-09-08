@@ -15,6 +15,7 @@ use serde::{Deserialize, Serialize};
 /// Declaration order is the canonical render order used by
 /// [`ReadinessReport::render`], matching PRD §7.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Enum))]
 pub enum Tool {
     Tmux,
     Git,
@@ -67,6 +68,7 @@ impl Tool {
 
 /// Detection result for a single tool.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Enum))]
 pub enum ToolStatus {
     /// Found on PATH.
     Ready,
@@ -91,6 +93,7 @@ impl fmt::Display for ToolStatus {
 ///
 /// Tools that were never set default to [`ToolStatus::Unknown`].
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Object))]
 pub struct ReadinessReport {
     statuses: HashMap<Tool, ToolStatus>,
 }
@@ -104,7 +107,10 @@ impl ReadinessReport {
     pub fn set(&mut self, tool: Tool, status: ToolStatus) {
         self.statuses.insert(tool, status);
     }
+}
 
+#[cfg_attr(feature = "ffi", uniffi::export)]
+impl ReadinessReport {
     /// Look up the status of a tool (`Unknown` if never probed).
     pub fn get(&self, tool: Tool) -> ToolStatus {
         self.statuses.get(&tool).copied().unwrap_or(ToolStatus::Unknown)

@@ -7,6 +7,7 @@
 
 /// Secret material for one SSH login attempt.
 #[derive(Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Enum))]
 pub enum Credentials {
     /// A plaintext password.
     Password(String),

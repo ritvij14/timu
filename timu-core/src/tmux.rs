@@ -94,6 +94,7 @@ pub fn parse_session_list(output: &crate::ssh::CommandOutput) -> Result<Vec<Stri
 /// Result of [`start_agent_session`]. `reused` tells the UI whether the
 /// tmux session (and therefore any running agent) already existed.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
 pub struct StartedSession {
     pub session_id: String,
     pub reused: bool,

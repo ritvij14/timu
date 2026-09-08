@@ -16,6 +16,7 @@ pub const CATCH_UP_SCROLLBACK_LINES: usize = 500;
 /// Streaming events for one tmux pane. Kept minimal by design — see the
 /// feature doc for what is deliberately deferred.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Enum))]
 pub enum PaneEvent {
     /// Replace the UI's view with this full pane text (attach, reconnect, or
     /// in-place redraw catch-up). Chunking into chat bubbles is a UI concern.

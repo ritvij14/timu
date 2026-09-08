@@ -6,6 +6,8 @@
 #[cfg(not(target_arch = "wasm32"))]
 mod connection;
 mod credentials;
+#[cfg(feature = "ffi")]
+mod ffi;
 mod error;
 mod folder;
 mod host_key;
@@ -32,12 +34,15 @@ pub use pane_stream::{
 };
 pub use profile::{AuthMethod, MachineProfile, ProfileInvalid};
 pub use readiness::{ReadinessReport, Tool, ToolStatus};
-pub use readiness_probe::{build_probe_command, parse_probe_output};
+pub use readiness_probe::{build_probe_command, parse_probe_output, run_readiness_probe};
 pub use ssh::{CommandOutput, FakeSshTransport, SshTransport};
 #[cfg(not(target_arch = "wasm32"))]
 pub use ssh_russh::RusshSshTransport;
 pub use store::{ProfileRecord, SessionRecord, Store};
 pub use timu_core::TimuCore;
+
+#[cfg(feature = "ffi")]
+uniffi::setup_scaffolding!();
 pub use tmux::{
     StartedSession, build_capture_pane_command, build_has_session_command,
     build_kill_session_command, build_list_sessions_command, build_new_session_command,

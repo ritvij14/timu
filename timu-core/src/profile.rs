@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// The method kind only. Secret material is handled out-of-band.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Enum))]
 pub enum AuthMethod {
     /// Log in with a password (stored in secure storage, not here).
     #[default]
@@ -24,6 +25,7 @@ pub enum AuthMethod {
 
 /// A saved SSH target. Persistable; carries no secrets.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
 pub struct MachineProfile {
     /// Friendly name shown in the session/machine list.
     pub name: String,

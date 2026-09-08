@@ -47,6 +47,16 @@ pub fn parse_probe_output(output: &str) -> ReadinessReport {
     report
 }
 
+/// Run the readiness probe over `transport` and parse the answer — the one
+/// call the FFI/UI layer drives. Composes [`build_probe_command`] + transport +
+/// [`parse_probe_output`] (the flow documented in §5 of the feature doc).
+pub async fn run_readiness_probe<T: crate::ssh::SshTransport>(
+    transport: &T,
+) -> Result<ReadinessReport, crate::error::TimuError> {
+    let output = transport.run_command(&build_probe_command()).await?;
+    Ok(parse_probe_output(&output.stdout))
+}
+
 /// Inverse of [`Tool::as_str`] for the probe protocol. Kept here (not on
 /// `Tool`) because the protocol is this module's concern.
 fn tool_from_str(s: &str) -> Option<Tool> {
@@ -56,6 +66,29 @@ fn tool_from_str(s: &str) -> Option<Tool> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ssh::{CommandOutput, FakeSshTransport};
+
+    #[tokio::test]
+    async fn run_readiness_probe_parses_the_probe_command_output() {
+        let mut fake = FakeSshTransport::new();
+        fake.script(
+            build_probe_command(),
+            CommandOutput::success("tmux:missing\ngit:ready\n"),
+        );
+        let report = run_readiness_probe(&fake).await.expect("probe runs");
+        assert_eq!(report.get(Tool::Tmux), ToolStatus::Missing);
+        assert_eq!(report.get(Tool::Git), ToolStatus::Ready);
+        assert!(report.tmux_is_missing());
+    }
+
+    #[tokio::test]
+    async fn run_readiness_probe_surfaces_transport_errors() {
+        let fake = FakeSshTransport::new();
+        let err = run_readiness_probe(&fake)
+            .await
+            .expect_err("unscripted command must fail");
+        assert_eq!(err.code(), "other");
+    }
 
     #[test]
     fn probe_command_mentions_every_tool_in_canonical_order() {

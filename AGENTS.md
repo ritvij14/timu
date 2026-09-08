@@ -167,6 +167,7 @@ Before writing a `useEffect`, check which category it falls into:
 - `timu-core/src/ssh_russh.rs` — concrete SSH transport; host-key TOFU lives here (Hard Block §2.2)
 - `timu-core/src/profile.rs` — security boundary: must not carry secrets (Hard Block §2.1)
 - `timu-core/src/store.rs` — schema is the persistence contract; no-secret-columns is enforced by test (ADR-009)
+- `timu-core/src/ffi.rs` — the UniFFI contract with the Expo app: exported object/method/callback names and `ConnectionTestOutcome` shapes are a breaking change if renamed (ADR-012)
 - `docs/prds/v0-prd.md` — the V0 scope of record; changes here redirect all work
 - **Living rule:** When a file or path is identified as load-bearing, add it here immediately with a one-line description of why it's critical.
 
@@ -273,7 +274,7 @@ tests need a target, point the app at your own VPS / `localhost` sshd.
 
 | Feature        | Doc                                                            | Status                    |
 | -------------- | -------------------------------------------------------------- | ------------------------- |
-| timu-core (Rust engine) | [docs/features/timu-core.md](docs/features/timu-core.md) | WIP — error/profile/credentials/host-key/readiness/ssh+russh/connection/folder/store/tmux-engine/live-pane-streaming landed (tasks 1–12); secrets bridge + FFI pending |
+| timu-core (Rust engine) | [docs/features/timu-core.md](docs/features/timu-core.md) | WIP — error/profile/credentials/host-key/readiness/ssh+russh/connection/folder/store/tmux-engine/live-pane-streaming/UniFFI-bridge landed (tasks 1–13, ADR-012); store FFI wiring + secrets bridge pending |
 | onboarding CLI | [docs/features/onboarding-cli.md](docs/features/onboarding-cli.md) | WIP — `npx timu-app` permanent-key pairing CLI, protocol docs, threat model, and physical-iOS acceptance checklist |
 
 > **Living section:** Add a row the moment a new feature doc is created. Update the Status column as features evolve. Never leave a feature undocumented.

@@ -11,9 +11,10 @@ timu-core is the Rust library that the Expo app (`timu-app`) drives over FFI
 (UniFFI planned). It owns everything the RN layer cannot do reliably on mobile:
 
 - SSH connection, auth, and host-key verification (russh — planned)
+- FFI bridge to the Expo app (UniFFI, feature `ffi`) — **landed (ADR-012)**
 - Machine readiness probing (PRD §7/§8) — **landed**
 - SFTP folder browsing (PRD §9) — planned
-- tmux session lifecycle + streaming (PRD §11/§12) — **lifecycle + chat send/capture landed; live streaming planned**
+- tmux session lifecycle + streaming (PRD §11/§12) — **landed**
 - Local persistent state for profiles, sessions, recent/favorite folders (PRD §13) — planned
 - Secure credential storage bridge (PRD §14) — planned
 
@@ -38,8 +39,9 @@ Rust is the wire between them.**
 | `src/host_key.rs` | `Fingerprint`, `HostKeyPins`, `HostKeyVerdict` (TOFU) | landed |
 | `src/connection.rs` | `ConnectionTestResult` + `test_connection` (PRD §6) | landed |
 | `src/folder.rs` | `FolderEntry`, shell-based folder listing + `shell_quote` | landed |
-| `src/store.rs` | SQLite store: profiles, sessions, recent/favorites, host-key pins | landed |
+| `src/store.rs` | SQLite store: profiles, sessions, recent/favorites, host-key pins | landed (FFI wiring planned) |
 | `src/secrets.rs` | platform secure-storage bridge | planned |
+| `src/ffi.rs` | UniFFI bridge: `FfiCore`/`Connection`/`PaneStreamHandle` + `PaneEventSink` callback (ADR-012) | landed (behind `ffi` feature) |
 | `src/tmux.rs` | tmux session lifecycle + chat send/capture | landed |
 | `src/pane_stream.rs` | live pane streaming: snapshot-diff watcher → `PaneEvent`s | landed (see §6) |
 
@@ -77,9 +79,9 @@ Rust is the wire between them.**
 ## 5. Key flows
 
 **Readiness check** (landed):
-`build_probe_command()` → `SshTransport::run_command()` → `parse_probe_output()` →
-`ReadinessReport::tmux_is_missing()` / `render()`. Fully testable via
-`FakeSshTransport`.
+`run_readiness_probe(transport)` (composes `build_probe_command()` →
+`SshTransport::run_command()` → `parse_probe_output()`) → `ReadinessReport::tmux_is_missing()` /
+`render()`. Fully testable via `FakeSshTransport`.
 
 **Connection test** (planned, task 8):
 `TimuCore::test_connection(profile)` → open SSH → TOFU host key → auth → typed
@@ -134,6 +136,11 @@ client-side without extra probes).
 5. **`run(interval, sender)`** drives attach + ticks into an `mpsc` channel;
    the caller spawns it on a tokio task.
 
+**FFI streaming:** `Connection::start_pane_stream(session_id, interval_ms, sink)`
+spawns one ordered task over `run()`: forwards events as they arrive, drains
+buffered events before calling `sink.on_error`, and `PaneStreamHandle::stop()`
+aborts the watcher (buffered events still deliver).
+
 ---
 
 ## 7. Testing
@@ -145,7 +152,8 @@ client-side without extra probes).
   cross-crate integration. TDD mandatory (ADR-006).
 - **Boundary mock:** `FakeSshTransport` is the only SSH mock. Never mock domain
   types or the store.
-- **Currently covered (125 tests, 1 `#[ignore]` live):** error codes/labels,
+- **Currently covered (128 tests core / 143 with `--features ffi`, 1
+  `#[ignore]` live):** error codes/labels,
   profile validation + serde + no-secrets, readiness render/order + tmux
   predicate + serde, probe command + parser edge cases, ssh trait + fake +
   readiness end-to-end, credentials redaction, host-key TOFU
@@ -158,7 +166,11 @@ client-side without extra probes).
   parsing + create/reuse/chat-send/capture/kill flows + `TmuxMissing` mapping,
   pane-stream diff (append/scroll/no-change/misalign/empty) + capture command
   builders + attach/tick/session-ended/catch-up flows + scripted-sequence
-  fake + `run()` event streaming end-to-end.
+  fake + `run()` event streaming end-to-end, FFI bridge (ADR-012): outcome
+  conversion, `Connection` flows over a fake transport (readiness, session
+  start/reuse/missing-tmux, chat send, capture, list, kill), pane streaming
+  over the callback sink (history → append → session-ended, transport errors
+  surface via `on_error`, `stop()` cancels further events).
 - **Explicitly not tested by CI:** live SSH connect against a real sshd
   (`ssh_russh::live_connect_and_run_command`, `#[ignore]`; set
   `TIMU_TEST_SSH_HOST`/`_USER`/`_PASS` or `_KEY`/`_KEYPASS` to run).
@@ -173,7 +185,7 @@ client-side without extra probes).
 - `serde_json` (dev) — round-trip assertions.
 - `tokio` — async runtime for russh + `#[tokio::test]`; `sync` (mpsc events)
   and `time` (poll interval) features.
-- Planned: `russh-sftp` (only if we move folder listing off the shell command),
-  `UniFFI` (FFI to Expo).
+- Planned: `russh-sftp` (only if we move folder listing off the shell command).
+- `uniffi` 0.32 (optional, behind `ffi`) — FFI to the Expo app (ADR-012).
 
 New crates are added only when a test forces them (ADR-006).

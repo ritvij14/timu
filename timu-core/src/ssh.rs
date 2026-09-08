@@ -46,6 +46,14 @@ pub trait SshTransport: Send + Sync {
     async fn run_command(&self, command: &str) -> Result<CommandOutput, TimuError>;
 }
 
+/// `Arc`-sharing: the FFI layer holds the connection's transport behind an
+/// `Arc` so the pane watcher can clone it and stream on the same connection.
+impl<T: SshTransport + ?Sized> SshTransport for std::sync::Arc<T> {
+    async fn run_command(&self, command: &str) -> Result<CommandOutput, TimuError> {
+        (**self).run_command(command).await
+    }
+}
+
 /// In-memory, scriptable transport for tests. Panics-free: looks up the exact
 /// command in its script table; unscripted commands return [`TimuError::Other`]
 /// so tests fail loudly on unexpected probes rather than silently passing.
@@ -189,6 +197,22 @@ mod tests {
             report.get(crate::readiness::Tool::Git),
             crate::readiness::ToolStatus::Ready
         );
+    }
+
+    #[tokio::test]
+    async fn arc_wrapped_transport_dispatches_run_command() {
+        // The FFI layer clones an Arc<T> into the pane watcher so streaming
+        // shares the connection's transport. Generic bind defeats deref
+        // coercion so T really is Arc<FakeSshTransport>.
+        async fn call_through<T: SshTransport>(transport: T) -> Result<CommandOutput, TimuError> {
+            transport.run_command("uname").await
+        }
+
+        let mut fake = FakeSshTransport::new();
+        fake.script_success("uname", "Linux\n");
+        let shared = std::sync::Arc::new(fake);
+        let out = call_through(shared.clone()).await.expect("scripted ok");
+        assert_eq!(out.stdout, "Linux\n");
     }
 
     #[test]

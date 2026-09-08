@@ -38,6 +38,26 @@ impl TimuCore {
     ) -> crate::connection::ConnectionTestResult {
         crate::connection::test_connection(profile, creds, self.host_key_pins.clone()).await
     }
+
+    /// Open + authenticate a live SSH connection for session work (PRD §11+).
+    /// Returns the transport plus the newly-pinned fingerprint on a first
+    /// connect (the UI surfaces it on the connection-test flow); the pin is
+    /// stored either way (TOFU, Hard Block §2.2). Live behavior covered by the
+    /// `#[ignore]` russh test.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub async fn connect(
+        &self,
+        profile: &crate::profile::MachineProfile,
+        creds: &crate::credentials::Credentials,
+    ) -> Result<
+        (
+            crate::RusshSshTransport,
+            Option<crate::host_key::Fingerprint>,
+        ),
+        crate::error::TimuError,
+    > {
+        crate::RusshSshTransport::connect(profile, creds, self.host_key_pins.clone()).await
+    }
 }
 
 #[cfg(test)]
